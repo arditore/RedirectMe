@@ -1,6 +1,7 @@
 """Menu interactif RedirectMe (rich + questionary)."""
 from __future__ import annotations
 
+import sys
 import webbrowser
 from pathlib import Path
 
@@ -14,6 +15,12 @@ from redirectme.profiles import list_profiles, load_profile, save_profile
 from redirectme.report import ScanResult, generate_report
 from redirectme.scanner import RedirectScanner
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 BANNER = """[bold cyan]╔══════════════════════════╗
 ║        RedirectMe        ║
 ║  Open Redirect Scanner   ║
@@ -26,6 +33,26 @@ MAIN_MENU_CHOICES = [
     "Voir le dernier rapport",
     "Quitter",
 ]
+
+
+def _validate_int(text: str) -> bool | str:
+    if not text:
+        return True
+    try:
+        int(text)
+        return True
+    except ValueError:
+        return "Merci d'entrer un nombre entier."
+
+
+def _validate_float(text: str) -> bool | str:
+    if not text:
+        return True
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return "Merci d'entrer un nombre."
 
 
 def run_interactive_menu(config_path: str = "config.ini") -> None:
@@ -150,10 +177,15 @@ def _edit_scan_options(config: AppConfig) -> AppConfig:
         or config.external_url
     )
     config.max_pages = int(
-        questionary.text("Pages max :", default=str(config.max_pages)).ask() or config.max_pages
+        questionary.text(
+            "Pages max :", default=str(config.max_pages), validate=_validate_int
+        ).ask()
+        or config.max_pages
     )
     config.max_workers = int(
-        questionary.text("Threads :", default=str(config.max_workers)).ask()
+        questionary.text(
+            "Threads :", default=str(config.max_workers), validate=_validate_int
+        ).ask()
         or config.max_workers
     )
     config.use_bypass_payloads = questionary.confirm(
@@ -182,15 +214,21 @@ def _menu_configuration(console: Console, config: AppConfig, config_path: str) -
     console.print("[bold]Configuration actuelle[/bold]")
     config = _edit_scan_options(config)
     config.timeout = int(
-        questionary.text("Timeout HTTP (s) :", default=str(config.timeout)).ask()
+        questionary.text(
+            "Timeout HTTP (s) :", default=str(config.timeout), validate=_validate_int
+        ).ask()
         or config.timeout
     )
     config.min_delay = float(
-        questionary.text("Délai minimum (s) :", default=str(config.min_delay)).ask()
+        questionary.text(
+            "Délai minimum (s) :", default=str(config.min_delay), validate=_validate_float
+        ).ask()
         or config.min_delay
     )
     config.max_delay = float(
-        questionary.text("Délai maximum (s) :", default=str(config.max_delay)).ask()
+        questionary.text(
+            "Délai maximum (s) :", default=str(config.max_delay), validate=_validate_float
+        ).ask()
         or config.max_delay
     )
     config.respect_robots = questionary.confirm(
