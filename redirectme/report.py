@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -87,15 +88,15 @@ def _write_csv(result: ScanResult, path: Path) -> None:
 
 def _write_html(result: ScanResult, path: Path) -> None:
     rows = "\n".join(
-        f"<tr><td class='vuln'>VULNÉRABLE</td><td>{v.type}</td><td>{v.url}</td><td>{v.detail}</td></tr>"
+        f"<tr><td class='vuln'>VULNÉRABLE</td><td>{html.escape(v.type)}</td><td>{html.escape(v.url)}</td><td>{html.escape(v.detail)}</td></tr>"
         for v in result.vulnerabilities
     ) or "<tr><td colspan='4'>Aucune redirection ouverte détectée.</td></tr>"
 
-    html = f"""<!DOCTYPE html>
+    html_content = f"""<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>Rapport RedirectMe - {result.target}</title>
+<title>Rapport RedirectMe - {html.escape(result.target)}</title>
 <style>
 body {{ font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }}
 h1 {{ color: #38bdf8; }}
@@ -108,7 +109,7 @@ th {{ color: #94a3b8; text-transform: uppercase; font-size: 0.8rem; }}
 </head>
 <body>
 <h1>Rapport RedirectMe</h1>
-<p class="summary">Cible : {result.target}<br>
+<p class="summary">Cible : {html.escape(result.target)}<br>
 Date : {result.started_at.isoformat()}<br>
 Durée : {result.duration_s:.1f}s &middot; Pages explorées : {result.pages_scanned} &middot;
 Vulnérabilités : {len(result.vulnerabilities)}</p>
@@ -118,4 +119,4 @@ Vulnérabilités : {len(result.vulnerabilities)}</p>
 </table>
 </body>
 </html>"""
-    path.write_text(html, encoding="utf-8")
+    path.write_text(html_content, encoding="utf-8")
