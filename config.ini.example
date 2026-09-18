@@ -1,0 +1,15 @@
+[general]
+external_url = https://evil.example.com
+max_pages = 100
+timeout = 5
+min_delay = 2.0
+max_delay = 5.0
+max_workers = 5
+
+[scan]
+use_bypass_payloads = true
+respect_robots = false
+
+[report]
+default_format = html
+output_dir = reports
