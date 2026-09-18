@@ -5,3 +5,7 @@ venv/
 *.log
 .DS_Store
 .worktrees/
+config.ini
+profiles/
+reports/
+.pytest_cache/
