@@ -46,6 +46,13 @@ def run_cli(args: argparse.Namespace) -> int:
         level=logging.INFO if args.verbose else logging.WARNING, format="%(message)s"
     )
 
+    if not (args.target.startswith("http://") or args.target.startswith("https://")):
+        print(
+            f"Erreur : l'URL cible doit commencer par http:// ou https:// (reçu : {args.target!r}).",
+            file=sys.stderr,
+        )
+        return 2
+
     config = load_config(args.config)
     if args.external_url:
         config.external_url = args.external_url
@@ -77,6 +84,14 @@ def run_cli(args: argparse.Namespace) -> int:
 
     report_path = generate_report(result, config.report_format, config.report_output_dir)
     print(f"Rapport enregistré dans {report_path}")
+
+    if result.pages_scanned == 0:
+        print(
+            "Avertissement : aucune page n'a pu être scannée (cible injoignable ou "
+            "bloquée) — le scan n'a pas réellement eu lieu.",
+            file=sys.stderr,
+        )
+        return 3
 
     return 1 if result.vulnerabilities else 0
 
