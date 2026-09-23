@@ -1,6 +1,7 @@
 """Menu interactif RedirectMe (rich + questionary)."""
 from __future__ import annotations
 
+import copy
 import sys
 import webbrowser
 from pathlib import Path
@@ -11,7 +12,14 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 
 from redirectme.config import AppConfig, ConfigError, load_config, save_config
-from redirectme.profiles import list_profiles, load_profile, save_profile
+from redirectme.profiles import (
+    PROFILE_NAME_RE,
+    InvalidProfileNameError,
+    ProfileNotFoundError,
+    list_profiles,
+    load_profile,
+    save_profile,
+)
 from redirectme.report import ScanResult, generate_report
 from redirectme.scanner import RedirectScanner
 
@@ -55,6 +63,13 @@ def _validate_float(text: str) -> bool | str:
         return "Merci d'entrer un nombre."
 
 
+def _validate_profile_name(text: str) -> bool | str:
+    # Doit rester cohérent avec PROFILE_NAME_RE de redirectme/profiles.py.
+    if text and PROFILE_NAME_RE.match(text):
+        return True
+    return "Le nom du profil ne doit contenir que des lettres, chiffres, '-' et '_'."
+
+
 def run_interactive_menu(config_path: str = "config.ini") -> None:
     console = Console()
     config = load_config(config_path)
@@ -88,18 +103,25 @@ def _menu_launch_scan(console: Console, config: AppConfig) -> Path | None:
     if not target:
         return None
 
+    # Les réglages édités ici sont ponctuels (propres à ce scan) et ne doivent
+    # pas modifier la configuration persistante de la session (cf. menu
+    # "Configuration", qui lui reste sur `config`).
+    scan_config = copy.deepcopy(config)
+
     table = Table(title="Options du scan")
     table.add_column("Option")
     table.add_column("Valeur")
-    table.add_row("URL de redirection testée", config.external_url)
-    table.add_row("Pages max", str(config.max_pages))
-    table.add_row("Threads", str(config.max_workers))
-    table.add_row("Payloads de contournement", "oui" if config.use_bypass_payloads else "non")
-    table.add_row("Format de rapport", config.report_format)
+    table.add_row("URL de redirection testée", scan_config.external_url)
+    table.add_row("Pages max", str(scan_config.max_pages))
+    table.add_row("Threads", str(scan_config.max_workers))
+    table.add_row(
+        "Payloads de contournement", "oui" if scan_config.use_bypass_payloads else "non"
+    )
+    table.add_row("Format de rapport", scan_config.report_format)
     console.print(table)
 
     if not questionary.confirm("Utiliser ces options ?", default=True).ask():
-        config = _edit_scan_options(config)
+        scan_config = _edit_scan_options(scan_config)
 
     authorized = questionary.confirm(
         f"Confirmez-vous être autorisé à tester {target} ?", default=False
@@ -130,7 +152,7 @@ def _menu_launch_scan(console: Console, config: AppConfig) -> Path | None:
                 state["vulns"] += 1
             progress.update(task_id, pages=state["pages"], vulns=state["vulns"])
 
-        scanner = RedirectScanner(target, config, on_progress=on_progress)
+        scanner = RedirectScanner(target, scan_config, on_progress=on_progress)
         try:
             result = scanner.crawl()
         except KeyboardInterrupt:
@@ -138,7 +160,7 @@ def _menu_launch_scan(console: Console, config: AppConfig) -> Path | None:
             console.print("[yellow]Scan interrompu.[/yellow]")
 
     _print_summary(console, result)
-    report_path = generate_report(result, config.report_format, config.report_output_dir)
+    report_path = generate_report(result, scan_config.report_format, scan_config.report_output_dir)
     console.print(f"[green]Rapport enregistré dans {report_path}[/green]")
 
     if report_path.suffix == ".html" and questionary.confirm(
@@ -147,10 +169,13 @@ def _menu_launch_scan(console: Console, config: AppConfig) -> Path | None:
         webbrowser.open(report_path.resolve().as_uri())
 
     if questionary.confirm("Sauvegarder ces réglages comme profil ?", default=False).ask():
-        name = questionary.text("Nom du profil :").ask()
+        name = questionary.text("Nom du profil :", validate=_validate_profile_name).ask()
         if name:
-            save_profile(name, config)
-            console.print(f"[green]Profil '{name}' sauvegardé.[/green]")
+            try:
+                save_profile(name, scan_config)
+                console.print(f"[green]Profil '{name}' sauvegardé.[/green]")
+            except InvalidProfileNameError as exc:
+                console.print(f"[red]Nom de profil invalide : {exc}[/red]")
 
     return report_path
 
@@ -188,12 +213,18 @@ def _edit_scan_options(config: AppConfig) -> AppConfig:
         ).ask()
         or config.max_workers
     )
-    config.use_bypass_payloads = questionary.confirm(
+    use_bypass_answer = questionary.confirm(
         "Activer les payloads de contournement ?", default=config.use_bypass_payloads
     ).ask()
-    config.report_format = questionary.select(
+    config.use_bypass_payloads = (
+        use_bypass_answer if use_bypass_answer is not None else config.use_bypass_payloads
+    )
+    report_format_answer = questionary.select(
         "Format de rapport :", choices=["html", "txt", "json", "csv"], default=config.report_format
     ).ask()
+    config.report_format = (
+        report_format_answer if report_format_answer is not None else config.report_format
+    )
     return config
 
 
@@ -205,7 +236,11 @@ def _menu_load_profile(console: Console, config: AppConfig) -> AppConfig:
     name = questionary.select("Choisissez un profil :", choices=profiles + ["Annuler"]).ask()
     if not name or name == "Annuler":
         return config
-    loaded = load_profile(name)
+    try:
+        loaded = load_profile(name)
+    except ProfileNotFoundError as exc:
+        console.print(f"[red]Profil introuvable : {exc}[/red]")
+        return config
     console.print(f"[green]Profil '{name}' chargé.[/green]")
     return loaded
 
