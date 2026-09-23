@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import random
 import sys
 import webbrowser
 from pathlib import Path
@@ -29,10 +30,24 @@ if sys.platform == "win32":
     except (AttributeError, ValueError):
         pass
 
-BANNER = """[bold cyan]╔══════════════════════════╗
+BANNER = r"""[bold cyan]      .--.
+     |o_o |
+     |:_/ |
+    //   \ \
+   (|     | )
+  /'\_   _/`\
+  \___)=(___/[/bold cyan]
+[bold white]        noot noot 🐧[/bold white]
+[bold cyan]╔══════════════════════════╗
 ║        RedirectMe        ║
 ║  Open Redirect Scanner   ║
 ╚══════════════════════════╝[/bold cyan]"""
+
+FAREWELL_MESSAGES = [
+    "[cyan]🐧 Noot noot, à bientôt ![/cyan]",
+    "[cyan]🐧 Le pingouin s'en va se dandiner ailleurs. À bientôt ![/cyan]",
+    "[cyan]🐧 Fin de la banquise pour aujourd'hui. À bientôt ![/cyan]",
+]
 
 MAIN_MENU_CHOICES = [
     "Lancer un scan",
@@ -77,9 +92,9 @@ def run_interactive_menu(config_path: str = "config.ini") -> None:
 
     while True:
         console.print(BANNER)
-        choice = questionary.select("Que voulez-vous faire ?", choices=MAIN_MENU_CHOICES).ask()
+        choice = questionary.select("🐧 Que voulez-vous faire ?", choices=MAIN_MENU_CHOICES).ask()
         if choice is None or choice == "Quitter":
-            console.print("[cyan]À bientôt ![/cyan]")
+            console.print(random.choice(FAREWELL_MESSAGES))
             return
         if choice == "Lancer un scan":
             report_path = _menu_launch_scan(console, config)
@@ -143,7 +158,7 @@ def _menu_launch_scan(console: Console, config: AppConfig) -> Path | None:
     result: ScanResult
 
     with progress:
-        task_id = progress.add_task("Scan en cours...", pages=0, vulns=0)
+        task_id = progress.add_task("🐧 Scan en cours (noot noot)...", pages=0, vulns=0)
 
         def on_progress(event: str, data: dict) -> None:
             if event == "page_scanned":
@@ -194,6 +209,10 @@ def _print_summary(console: Console, result: ScanResult) -> None:
         f"{len(result.vulnerabilities)} redirection(s) ouverte(s) sur {result.pages_scanned} "
         f"page(s) explorée(s) en {result.duration_s:.1f}s."
     )
+    if result.vulnerabilities:
+        console.print("[red]🐧 Noot noot ! Le pingouin a trouvé quelque chose.[/red]")
+    else:
+        console.print("[green]🐧 Noot noot ! Rien à signaler, la banquise est saine.[/green]")
 
 
 def _edit_scan_options(config: AppConfig) -> AppConfig:
@@ -238,8 +257,8 @@ def _menu_load_profile(console: Console, config: AppConfig) -> AppConfig:
         return config
     try:
         loaded = load_profile(name)
-    except ProfileNotFoundError as exc:
-        console.print(f"[red]Profil introuvable : {exc}[/red]")
+    except (ProfileNotFoundError, InvalidProfileNameError) as exc:
+        console.print(f"[red]Profil introuvable ou invalide : {exc}[/red]")
         return config
     console.print(f"[green]Profil '{name}' chargé.[/green]")
     return loaded
@@ -266,9 +285,12 @@ def _menu_configuration(console: Console, config: AppConfig, config_path: str) -
         ).ask()
         or config.max_delay
     )
-    config.respect_robots = questionary.confirm(
+    respect_robots_answer = questionary.confirm(
         "Respecter robots.txt ?", default=config.respect_robots
     ).ask()
+    config.respect_robots = (
+        respect_robots_answer if respect_robots_answer is not None else config.respect_robots
+    )
     try:
         save_config(config, config_path)
         console.print("[green]Configuration sauvegardée.[/green]")

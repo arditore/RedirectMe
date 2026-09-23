@@ -1,9 +1,22 @@
-# 🔀 RedirectMe
+# 🔀 RedirectMe 🐧
 
 **Scanner de redirections ouvertes (open redirect) pour l'audit de sécurité web — menu interactif, payloads de contournement, rapports HTML.**
 
+*noot noot — le pingouin qui traque les redirections louches.*
+
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+```
+      .--.
+     |o_o |
+     |:_/ |
+    //   \ \
+   (|     | )
+  /'\_   _/`\
+  \___)=(___/
+        noot noot 🐧
+```
 
 RedirectMe explore un site web et teste ses liens, ses scripts JavaScript et
 ses formulaires afin de détecter des **redirections ouvertes** — une faille
@@ -83,6 +96,14 @@ python main.py
 ```
 
 ```
+      .--.
+     |o_o |
+     |:_/ |
+    //   \ \
+   (|     | )
+  /'\_   _/`\
+  \___)=(___/
+        noot noot 🐧
 ╔══════════════════════════╗
 ║        RedirectMe        ║
 ║  Open Redirect Scanner   ║
@@ -194,3 +215,7 @@ proposer une amélioration ou signaler un bug. Merci d'inclure des tests
 ## Licence
 
 Distribué sous licence [MIT](LICENSE).
+
+---
+
+🐧 *noot noot*

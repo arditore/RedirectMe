@@ -69,7 +69,7 @@ def run_cli(args: argparse.Namespace) -> int:
             print("Scan annulé (autorisation non confirmée).")
             return 1
 
-    print(f"Scan de {args.target} à la recherche de redirections ouvertes...\n")
+    print(f"🐧 noot noot — scan de {args.target} à la recherche de redirections ouvertes...\n")
     scanner = RedirectScanner(args.target, config)
     try:
         result = scanner.crawl()
@@ -92,6 +92,11 @@ def run_cli(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 3
+
+    if result.vulnerabilities:
+        print("🐧 Noot noot ! Le pingouin a trouvé quelque chose.")
+    else:
+        print("🐧 Noot noot ! Rien à signaler, la banquise est saine.")
 
     return 1 if result.vulnerabilities else 0
 
