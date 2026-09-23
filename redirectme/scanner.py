@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Callable, Optional
-from urllib.parse import urljoin, urlencode, urlparse
+from urllib.parse import unquote, urljoin, urlencode, urlparse, urlsplit
 from urllib.robotparser import RobotFileParser
 
 import requests
@@ -33,6 +33,11 @@ USER_AGENTS = [
 JS_REDIRECT_REGEX = re.compile(
     r"(?:window\.location\.href|location\.replace)\s*\(\s*['\"]([^'\"]+)['\"]"
 )
+
+# Repère un "double schéma" du type "https:https://evil.example.com" (bypass de
+# validation naïve qui préfixe "https:" sans vérifier que la valeur en a déjà un)
+# afin de le neutraliser avant résolution.
+_DUPLICATE_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:(?=[a-zA-Z][a-zA-Z0-9+.-]*://)")
 
 logger = logging.getLogger("redirectme")
 
@@ -82,15 +87,25 @@ class RedirectScanner:
         return self._robot_parser.can_fetch("*", url)
 
     def request_with_retry(
-        self, url: str, retries: int | None = None
+        self,
+        url: str,
+        retries: int | None = None,
+        method: str = "get",
+        params: dict | None = None,
+        data: dict | None = None,
     ) -> requests.Response | None:
-        """Effectue une requête GET avec gestion des erreurs 429 et backoff exponentiel."""
+        """Effectue une requête HTTP (GET par défaut) avec throttling par requête,
+        gestion des erreurs 429 et backoff exponentiel."""
         retries = DEFAULT_MAX_RETRIES if retries is None else retries
         backoff_factor = 2
         for attempt in range(retries):
+            time.sleep(random.uniform(self.config.min_delay, self.config.max_delay))
             try:
-                response = self.session.get(
+                response = self.session.request(
+                    method,
                     url,
+                    params=params,
+                    data=data,
                     timeout=self.config.timeout,
                     headers={"User-Agent": random.choice(USER_AGENTS)},
                     allow_redirects=False,
@@ -126,12 +141,48 @@ class RedirectScanner:
         return JS_REDIRECT_REGEX.findall(response.text)
 
     def is_open_redirect(self, test_url: str) -> bool:
-        """Vérifie si `test_url` redirige (3xx) vers l'URL externe de test."""
+        """Vérifie si `test_url` redirige (3xx) vers l'hôte externe de test."""
         response = self.request_with_retry(test_url, retries=3)
         if response is None or not (300 <= response.status_code < 400):
             return False
+        return self._response_points_to_external(response, test_url)
+
+    def _response_points_to_external(self, response: requests.Response, base_url: str) -> bool:
+        """Vérifie si l'en-tête Location de `response` pointe vers l'hôte externe configuré."""
         location = response.headers.get("Location", "")
-        return self.config.external_url in location
+        return self._location_points_to_external(base_url, location)
+
+    def _location_points_to_external(self, base_url: str, location: str) -> bool:
+        """Résout `location` (relative ou absolue) par rapport à `base_url` et compare son
+        hôte à l'hôte externe configuré, en neutralisant les contournements courants générés
+        par `build_payloads` (URL protocole-relative, antislash, double-schéma, encodage
+        %2F, confusion d'autorité via userinfo)."""
+        if not location:
+            return False
+        external_host = urlsplit(self.config.external_url).hostname
+        if not external_host:
+            return False
+
+        # Neutralise l'encodage %2F et la normalisation antislash->slash que les
+        # navigateurs appliquent (RFC non respectée, mais comportement réel des
+        # navigateurs pour les schémas "spéciaux").
+        candidate = unquote(location).replace("\\", "/")
+        candidate = _DUPLICATE_SCHEME_RE.sub("", candidate)
+
+        def _matches(value: str) -> bool:
+            resolved = urlsplit(urljoin(base_url, value))
+            return resolved.hostname == external_host
+
+        if _matches(candidate):
+            return True
+
+        # Cas "hôte_cible@hôte_externe" reflété tel quel, sans schéma ni "//" : un
+        # serveur vulnérable peut l'insérer directement dans un contexte d'autorité
+        # (ex : Location construite comme "https://" + valeur).
+        if "@" in candidate and "://" not in candidate and not candidate.startswith("/"):
+            return _matches("//" + candidate)
+
+        return False
 
     def _test_link(self, full_link: str) -> None:
         if not self._is_allowed(full_link):
@@ -180,17 +231,33 @@ class RedirectScanner:
             if not same_site(full_action, self.target_netloc):
                 continue
 
-            data = {
+            form_data = {
                 tag.get("name"): tag.get("value", "")
                 for tag in form.find_all("input")
                 if tag.get("name")
             }
+            touched = False
             for param in DEFAULT_REDIRECT_PARAMS:
-                if param in data:
-                    data[param] = self.config.external_url
+                if param in form_data:
+                    form_data[param] = self.config.external_url
+                    touched = True
+            if not touched:
+                continue
 
-            response = self.request_with_retry(full_action, retries=3)
-            if response is not None and self.is_open_redirect(response.url):
+            method = (form.get("method") or "get").strip().lower()
+            if method not in ("get", "post"):
+                method = "get"
+
+            form_response = self.request_with_retry(
+                full_action,
+                retries=3,
+                method=method,
+                params=form_data if method == "get" else None,
+                data=form_data if method == "post" else None,
+            )
+            if form_response is None or not (300 <= form_response.status_code < 400):
+                continue
+            if self._response_points_to_external(form_response, full_action):
                 self._report_vulnerability("form", full_action, "soumission de formulaire")
 
     def _report_vulnerability(self, vuln_type: str, url: str, detail: str) -> None:
@@ -227,8 +294,6 @@ class RedirectScanner:
             for link in links:
                 if same_site(link, self.target_netloc) and link not in self.visited_urls:
                     urls_to_visit.append(link)
-
-            time.sleep(random.uniform(self.config.min_delay, self.config.max_delay))
 
         return self.result()
 
