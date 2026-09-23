@@ -2,8 +2,8 @@
 external_url = https://evil.example.com
 max_pages = 100
 timeout = 5
-min_delay = 2.0
-max_delay = 5.0
+min_delay = 0.2
+max_delay = 0.8
 max_workers = 5
 
 [scan]

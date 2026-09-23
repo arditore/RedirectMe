@@ -17,8 +17,8 @@ class AppConfig:
     external_url: str = "https://evil.example.com"
     max_pages: int = 100
     timeout: int = 5
-    min_delay: float = 2.0
-    max_delay: float = 5.0
+    min_delay: float = 0.2
+    max_delay: float = 0.8
     max_workers: int = 5
     use_bypass_payloads: bool = True
     respect_robots: bool = False

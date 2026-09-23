@@ -160,8 +160,8 @@ Généré automatiquement au premier lancement (voir `config.ini.example`) :
 external_url = https://evil.example.com
 max_pages = 100
 timeout = 5
-min_delay = 2.0
-max_delay = 5.0
+min_delay = 0.2
+max_delay = 0.8
 max_workers = 5
 
 [scan]
@@ -174,6 +174,12 @@ output_dir = reports
 ```
 
 Éditable directement depuis le menu ("Configuration") ou en modifiant le fichier.
+
+> ℹ️ `min_delay`/`max_delay` s'appliquent **à chaque requête HTTP individuelle**
+> (pas par page). Une page avec de nombreux liens et `use_bypass_payloads =
+> true` peut générer plusieurs centaines de requêtes de test — augmentez les
+> délais pour rester discret, ou désactivez `use_bypass_payloads` pour un scan
+> plus rapide (1 payload testé par paramètre au lieu de 6).
 
 ---
 
