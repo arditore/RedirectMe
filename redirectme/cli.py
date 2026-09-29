@@ -97,7 +97,7 @@ def run_interactive_menu(config_path: str = "config.ini") -> None:
             console.print(random.choice(FAREWELL_MESSAGES))
             return
         if choice == "Lancer un scan":
-            report_path = _menu_launch_scan(console, config)
+            report_path = _menu_launch_scan(console, config, config_path)
             if report_path:
                 last_report = report_path
         elif choice == "Charger un profil de scan":
@@ -108,15 +108,34 @@ def run_interactive_menu(config_path: str = "config.ini") -> None:
             _menu_view_last_report(console, last_report)
 
 
-def _menu_launch_scan(console: Console, config: AppConfig) -> Path | None:
-    target = questionary.text(
+def _prompt_target_url() -> str | None:
+    return questionary.text(
         "URL cible à scanner (ex: https://example.com) :",
         validate=lambda text: bool(text)
         and (text.startswith("http://") or text.startswith("https://"))
         or "L'URL doit commencer par http:// ou https://",
     ).ask()
+
+
+def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> Path | None:
+    if config.last_target:
+        reuse = questionary.confirm(
+            f"Scanner à nouveau {config.last_target} ?", default=True
+        ).ask()
+        if reuse is None:
+            return None
+        target = config.last_target if reuse else _prompt_target_url()
+    else:
+        target = _prompt_target_url()
     if not target:
         return None
+
+    if target != config.last_target:
+        config.last_target = target
+        try:
+            save_config(config, config_path)
+        except OSError as exc:
+            console.print(f"[yellow]Impossible d'enregistrer la dernière cible : {exc}[/yellow]")
 
     # Les réglages édités ici sont ponctuels (propres à ce scan) et ne doivent
     # pas modifier la configuration persistante de la session (cf. menu

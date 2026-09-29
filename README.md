@@ -1,8 +1,8 @@
 # 🔀 RedirectMe 🐧
 
-**Scanner de redirections ouvertes (open redirect) pour l'audit de sécurité web — menu interactif, payloads de contournement, rapports HTML.**
+**Open redirect scanner for web security audits — interactive menu, bypass payloads, HTML reports.**
 
-*noot noot — le pingouin qui traque les redirections louches.*
+*noot noot — the penguin that hunts down shady redirects.*
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -18,57 +18,62 @@
         noot noot 🐧
 ```
 
-RedirectMe explore un site web et teste ses liens, ses scripts JavaScript et
-ses formulaires afin de détecter des **redirections ouvertes** — une faille
-souvent exploitée dans des campagnes de **phishing**, où une URL en apparence
-légitime redirige finalement vers un site malveillant.
+RedirectMe crawls a website and tests its links, JavaScript and forms to
+detect **open redirects** — a flaw often exploited in **phishing**
+campaigns, where a seemingly legitimate URL ultimately redirects to a
+malicious site.
 
-> ⚠️ **Usage éthique uniquement.** N'utilisez cet outil que sur des sites que
-> vous possédez ou pour lesquels vous avez une autorisation explicite (test
-> d'intrusion, bug bounty, CTF). Scanner un site tiers sans accord est illégal
-> dans la plupart des juridictions. Une confirmation d'autorisation est
-> demandée avant chaque scan.
+> ⚠️ **Ethical use only.** Only use this tool on sites you own or have
+> explicit authorization to test (penetration testing, bug bounty, CTF).
+> Scanning a third-party site without consent is illegal in most
+> jurisdictions. An authorization confirmation is requested before every
+> scan.
 
 ---
 
-## Sommaire
+## Table of Contents
 
-- [Fonctionnalités](#fonctionnalités)
+- [Features](#features)
 - [Installation](#installation)
-- [Utilisation](#utilisation)
-  - [Menu interactif](#menu-interactif)
-  - [Mode scriptable (CLI)](#mode-scriptable-cli)
+- [Usage](#usage)
+  - [Interactive menu](#interactive-menu)
+  - [Scriptable mode (CLI)](#scriptable-mode-cli)
 - [Configuration (`config.ini`)](#configuration-configini)
-- [Profils de scan](#profils-de-scan)
-- [Formats de rapport](#formats-de-rapport)
-- [Comment ça marche](#comment-ça-marche)
-- [Contribuer](#contribuer)
-- [Licence](#licence)
+- [Scan profiles](#scan-profiles)
+- [Report formats](#report-formats)
+- [How it works](#how-it-works)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## Fonctionnalités
+## Features
 
-- 🖥️ **Menu interactif** coloré (`rich` + `questionary`) : lancement de scan,
-  gestion des profils, édition de la configuration, consultation du dernier rapport.
-- 🕷️ **Crawl multithreadé**, limité au même domaine et à un nombre de pages configurable.
-- 🔗 **Paramètres de redirection** classiques (`url`, `redirect`, `next`, `goto`...)
-  testés sur chaque lien.
-- 🧪 **Payloads de contournement** (protocol-relative `//`, trick `@`, encodage, etc.)
-  pour détecter des variantes que les filtres naïfs laissent passer.
-- 🧩 **Détection des redirections JavaScript** (`window.location.href`, `location.replace`).
-- 📝 **Scan des formulaires** en injectant l'URL de test dans les champs de redirection.
-- 🤖 **Respect optionnel de `robots.txt`**.
-- 🔁 **Gestion des erreurs et des 429** avec backoff exponentiel et rotation de User-Agent.
-- 💾 **Rapports** en TXT, JSON, CSV ou HTML (ouvrable dans le navigateur).
-- 🗂️ **Profils de scan sauvegardés** pour réutiliser des réglages nommés.
-- ⚙️ **`config.ini`** auto-généré et éditable depuis le menu.
+- 🖥️ **Colorful interactive menu** (`rich` + `questionary`): launch scans,
+  manage profiles, edit configuration, view the last report.
+- 🎯 **Remembers your last target** — confirms it in one keypress next
+  time, or lets you type a new one directly.
+- 🕷️ **Multithreaded crawl**, limited to the same domain and a configurable
+  number of pages.
+- 🔗 **Classic redirect parameters** (`url`, `redirect`, `next`, `goto`...)
+  tested on every link.
+- 🧪 **Bypass payloads** (protocol-relative `//`, `@` trick, encoding, etc.)
+  to catch variants that naive filters let through.
+- 🧩 **JavaScript redirect detection** (`window.location.href`,
+  `location.replace`).
+- 📝 **Form scanning** by injecting the test URL into redirect fields.
+- 🤖 **Optional `robots.txt` compliance**.
+- 🔁 **Error and 429 handling** with exponential backoff and User-Agent
+  rotation.
+- 💾 **Reports** in TXT, JSON, CSV or HTML (openable in a browser).
+- 🗂️ **Saved scan profiles** to reuse named setups.
+- ⚙️ **`config.ini`** auto-generated and editable from the menu.
 
 ---
 
 ## Installation
 
-Python 3.9 ou supérieur est requis.
+Python 3.9 or higher is required.
 
 ```bash
 git clone https://github.com/arditore/RedirectMe.git
@@ -76,7 +81,7 @@ cd RedirectMe
 pip install -r requirements.txt
 ```
 
-Pour contribuer ou lancer les tests, installez aussi les dépendances de dev :
+To contribute or run the tests, also install the dev dependencies:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -85,11 +90,11 @@ python -m pytest tests/ -v
 
 ---
 
-## Utilisation
+## Usage
 
-### Menu interactif
+### Interactive menu
 
-Lancez l'outil sans argument pour ouvrir le menu :
+Launch the tool with no argument to open the menu:
 
 ```bash
 python main.py
@@ -109,19 +114,25 @@ python main.py
 ║  Open Redirect Scanner   ║
 ╚══════════════════════════╝
 
-1. Lancer un scan
-2. Charger un profil de scan
+1. Start a scan
+2. Load a scan profile
 3. Configuration
-4. Voir le dernier rapport
-5. Quitter
+4. View last report
+5. Quit
 ```
 
-Le menu vous guide : URL cible, options du scan, confirmation d'autorisation,
-barre de progression en temps réel, puis résumé coloré et génération du rapport.
+The menu walks you through it: target URL (or a one-keypress confirmation
+of your last target — see below), scan options, authorization confirmation,
+a live progress bar, then a colored summary and report generation.
 
-### Mode scriptable (CLI)
+Once you've scanned a site, RedirectMe remembers it: next time you start a
+scan it asks *"Scan `<last target>` again?"* — confirm to reuse it
+instantly, or decline to type a new URL directly. The chosen target is
+saved to `config.ini` either way.
 
-Pour l'automatisation/CI, passez l'URL en argument :
+### Scriptable mode (CLI)
+
+For automation/CI, pass the URL as an argument:
 
 ```bash
 python main.py https://example.com --yes --output-format json
@@ -135,25 +146,25 @@ usage: main.py [-h] [--no-interactive] [--yes] [--config CONFIG]
                 [target]
 
 positional arguments:
-  target                URL de base du site à scanner (ex : https://example.com)
+  target                Base URL of the site to scan (e.g.: https://example.com)
 
 options:
-  -h, --help            affiche ce message d'aide
-  --no-interactive      force le mode CLI (sans menu interactif)
-  --yes                 confirme automatiquement l'autorisation de scan
-  --config CONFIG       chemin du fichier config.ini (défaut : config.ini)
-  --external-url URL    surcharge l'URL externe de test
-  --max-pages N         surcharge le nombre max de pages
-  --output-format FMT   surcharge le format de rapport (txt, json, csv, html)
-  --output-dir DIR      surcharge le dossier de sortie des rapports
-  -v, --verbose         affiche les logs détaillés
+  -h, --help            show this help message
+  --no-interactive      force CLI mode (no interactive menu)
+  --yes                 automatically confirm scan authorization
+  --config CONFIG       path to the config.ini file (default: config.ini)
+  --external-url URL    override the external test URL
+  --max-pages N         override the max number of pages
+  --output-format FMT   override the report format (txt, json, csv, html)
+  --output-dir DIR      override the report output directory
+  -v, --verbose         show detailed logs
 ```
 
 ---
 
 ## Configuration (`config.ini`)
 
-Généré automatiquement au premier lancement (voir `config.ini.example`) :
+Auto-generated on first launch (see `config.ini.example`):
 
 ```ini
 [general]
@@ -163,6 +174,7 @@ timeout = 5
 min_delay = 0.2
 max_delay = 0.8
 max_workers = 5
+last_target =
 
 [scan]
 use_bypass_payloads = true
@@ -173,54 +185,61 @@ default_format = html
 output_dir = reports
 ```
 
-Éditable directement depuis le menu ("Configuration") ou en modifiant le fichier.
+Editable directly from the menu ("Configuration") or by modifying the file.
 
-> ℹ️ `min_delay`/`max_delay` s'appliquent **à chaque requête HTTP individuelle**
-> (pas par page). Une page avec de nombreux liens et `use_bypass_payloads =
-> true` peut générer plusieurs centaines de requêtes de test — augmentez les
-> délais pour rester discret, ou désactivez `use_bypass_payloads` pour un scan
-> plus rapide (1 payload testé par paramètre au lieu de 6).
-
----
-
-## Profils de scan
-
-Depuis le menu, sauvegardez vos réglages actuels sous un nom ("scan-rapide",
-"scan-complet"...) et rechargez-les au prochain lancement via
-"Charger un profil de scan". Les profils sont stockés dans `profiles/*.json`.
+> ℹ️ `min_delay`/`max_delay` apply **to every individual HTTP request**
+> (not per page). A page with many links and `use_bypass_payloads = true`
+> can generate several hundred test requests — increase the delays to stay
+> discreet, or disable `use_bypass_payloads` for a faster scan (1 payload
+> tested per parameter instead of 6).
 
 ---
 
-## Formats de rapport
+## Scan profiles
 
-- **TXT** : liste simple, une ligne par vulnérabilité.
-- **JSON** : structure complète (cible, dates, stats, vulnérabilités) pour intégration avec d'autres outils.
-- **CSV** : une ligne par vulnérabilité, pour tableur.
-- **HTML** : rapport stylé, proposé automatiquement dans le navigateur en fin de scan interactif.
-
-Les rapports sont écrits dans `reports/` (configurable).
+From the menu, save your current settings under a name ("quick-scan",
+"full-scan"...) and reload them next time via "Load a scan profile".
+Profiles are stored in `profiles/*.json`.
 
 ---
 
-## Comment ça marche
+## Report formats
 
-1. **Crawl** : le script part de l'URL cible et suit les liens internes (même nom de domaine uniquement), jusqu'à `max_pages` pages, en respectant `robots.txt` si activé.
-2. **Injection multithreadée** : pour chaque lien, chaque paramètre connu est testé avec l'URL externe et, si activé, ses variantes de contournement.
-3. **Vérification** : une réponse HTTP 3xx dont l'en-tête `Location` pointe vers l'URL externe est considérée comme une redirection ouverte.
-4. **JavaScript & formulaires** : le même principe est appliqué aux redirections détectées dans le code JS et aux champs de formulaire.
-5. **Rapport** : les résultats sont exportés dans le format choisi.
+- **TXT**: simple list, one line per vulnerability.
+- **JSON**: full structure (target, dates, stats, vulnerabilities) for
+  integration with other tools.
+- **CSV**: one line per vulnerability, for spreadsheets.
+- **HTML**: styled report, automatically offered in the browser at the end
+  of an interactive scan.
+
+Reports are written to `reports/` (configurable).
 
 ---
 
-## Contribuer
+## How it works
 
-Les contributions sont bienvenues. Ouvrez une issue ou une pull request pour
-proposer une amélioration ou signaler un bug. Merci d'inclure des tests
-(`python -m pytest tests/ -v`) pour toute nouvelle fonctionnalité.
+1. **Crawl**: the script starts from the target URL and follows internal
+   links (same domain name only), up to `max_pages` pages, respecting
+   `robots.txt` if enabled.
+2. **Multithreaded injection**: for each link, every known parameter is
+   tested with the external URL and, if enabled, its bypass variants.
+3. **Verification**: an HTTP 3xx response whose `Location` header points to
+   the external URL is considered an open redirect.
+4. **JavaScript & forms**: the same principle is applied to redirects
+   detected in JS code and in form fields.
+5. **Report**: results are exported in the chosen format.
 
-## Licence
+---
 
-Distribué sous licence [MIT](LICENSE).
+## Contributing
+
+Contributions are welcome. Open an issue or a pull request to propose an
+improvement or report a bug. Please include tests
+(`python -m pytest tests/ -v`) for any new feature.
+
+## License
+
+Distributed under the [MIT](LICENSE) license.
 
 ---
 

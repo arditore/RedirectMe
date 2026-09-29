@@ -24,6 +24,7 @@ class AppConfig:
     respect_robots: bool = False
     report_format: str = "html"
     report_output_dir: str = "reports"
+    last_target: str = ""
 
 
 def _to_parser(config: AppConfig) -> configparser.ConfigParser:
@@ -35,6 +36,7 @@ def _to_parser(config: AppConfig) -> configparser.ConfigParser:
         "min_delay": str(config.min_delay),
         "max_delay": str(config.max_delay),
         "max_workers": str(config.max_workers),
+        "last_target": config.last_target,
     }
     parser["scan"] = {
         "use_bypass_payloads": str(config.use_bypass_payloads).lower(),
@@ -78,6 +80,9 @@ def load_config(path: str = "config.ini") -> AppConfig:
             respect_robots=scan.getboolean("respect_robots"),
             report_format=report.get("default_format", AppConfig.report_format),
             report_output_dir=report.get("output_dir", AppConfig.report_output_dir),
+            # .get() avec valeur par défaut : absent des config.ini générés avant
+            # l'ajout de ce champ, ne doit pas faire échouer le chargement.
+            last_target=general.get("last_target", ""),
         )
     except (KeyError, ValueError) as exc:
         raise ConfigError(f"config.ini invalide ({path}) : {exc}") from exc

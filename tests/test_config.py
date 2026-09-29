@@ -17,10 +17,25 @@ def test_save_and_load_round_trip(tmp_path):
         max_pages=42,
         max_workers=3,
         report_format="json",
+        last_target="https://example.com",
     )
     save_config(custom, str(config_path))
     loaded = load_config(str(config_path))
     assert loaded == custom
+
+
+def test_load_config_defaults_last_target_when_absent(tmp_path):
+    """config.ini écrits avant l'ajout de last_target ne doivent pas faire échouer le chargement."""
+    config_path = tmp_path / "config.ini"
+    config_path.write_text(
+        "[general]\nexternal_url = https://evil.example.com\nmax_pages = 10\n"
+        "timeout = 5\nmin_delay = 0.2\nmax_delay = 0.8\nmax_workers = 5\n"
+        "[scan]\nuse_bypass_payloads = true\nrespect_robots = false\n"
+        "[report]\ndefault_format = html\noutput_dir = reports\n",
+        encoding="utf-8",
+    )
+    config = load_config(str(config_path))
+    assert config.last_target == ""
 
 
 def test_load_config_rejects_invalid_int(tmp_path):

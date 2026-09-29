@@ -5,6 +5,7 @@ timeout = 5
 min_delay = 0.2
 max_delay = 0.8
 max_workers = 5
+last_target =
 
 [scan]
 use_bypass_payloads = true
