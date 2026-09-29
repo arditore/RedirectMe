@@ -30,22 +30,62 @@ def test_same_site_compares_exact_netloc():
     assert not same_site("https://evil.example.com.attacker.test/path", "example.com")
 
 
+def test_location_points_to_external_detects_every_bypass_variant():
+    from redirectme.payloads import build_payloads
+
+    config = make_config(external_url="https://evil.example.com")
+    scanner = RedirectScanner("https://target.com", config)
+    base_url = "https://target.com/page?next=X"
+
+    for payload in build_payloads("next", "target.com", "https://evil.example.com"):
+        assert scanner._location_points_to_external(base_url, payload), (
+            f"payload not detected when reflected verbatim: {payload!r}"
+        )
+
+
+def test_location_points_to_external_has_no_false_positives():
+    config = make_config(external_url="https://evil.example.com")
+    scanner = RedirectScanner("https://target.com", config)
+    base_url = "https://target.com/page?next=X"
+
+    safe_locations = [
+        "https://target.com/dashboard",
+        "/relative/path",
+        # adversarial: contains the external host as a substring, but the real
+        # host is a different, unrelated domain the attacker doesn't control.
+        "https://evil.example.com.attacker.test/phish",
+        "https://notevil.example.com",
+        # a real subdomain of the TARGET must never be treated as pointing
+        # to the external host, even though our subdomain-confusion matching
+        # accepts subdomains of the external host.
+        "https://sub.target.com/ok",
+        "https://evilXexample.com",
+    ]
+    for location in safe_locations:
+        assert not scanner._location_points_to_external(base_url, location), (
+            f"false positive on safe location: {location!r}"
+        )
+
+
 def test_crawl_detects_vulnerable_param(requests_mock):
     # requests_mock matches the most-recently-registered matcher first, so the
     # catch-all must be registered before the more specific matchers below.
+    # The link path contains "redirect" so it qualifies as a Tier 2 entry
+    # point (see ENTRY_POINT_HINTS) and gets the full guessed-parameter
+    # battery instead of just its own (nonexistent) query parameters.
     requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
     requests_mock.get(
         "http://example.com",
-        text='<html><body><a href="/page1">link</a></body></html>',
+        text='<html><body><a href="/redirect">link</a></body></html>',
         headers={"Content-Type": "text/html"},
     )
     requests_mock.get(
-        "http://example.com/page1",
+        "http://example.com/redirect",
         text="<html></html>",
         headers={"Content-Type": "text/html"},
     )
     requests_mock.get(
-        "http://example.com/page1?url=https%3A%2F%2Fevil.example.com",
+        "http://example.com/redirect?url=https%3A%2F%2Fevil.example.com",
         status_code=302,
         headers={"Location": "https://evil.example.com"},
     )
@@ -70,21 +110,23 @@ def test_crawl_detects_each_bypass_payload_variant(requests_mock, payload_value)
     # Regression test for Finding 1: `is_open_redirect` used to substring-match
     # the full `external_url` against the Location header, so a server that
     # naively reflects a *bypass* payload (protocol-relative, backslash,
-    # double-scheme, userinfo, percent-encoded) into Location was never
-    # detected. Each of the 6 variants `build_payloads` generates must be
-    # individually detectable when the server reflects that exact string.
+    # double-scheme, userinfo, percent-encoded, subdomain confusion, double
+    # encoding, control-char, missing slashes) into Location was never
+    # detected. Each variant `build_payloads` generates must be individually
+    # detectable when the server reflects that exact string. The link path
+    # contains "redirect" so it's a Tier 2 entry point (see ENTRY_POINT_HINTS).
     requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
     requests_mock.get(
         "http://example.com",
-        text='<html><body><a href="/page1">link</a></body></html>',
+        text='<html><body><a href="/redirect">link</a></body></html>',
         headers={"Content-Type": "text/html"},
     )
     requests_mock.get(
-        "http://example.com/page1",
+        "http://example.com/redirect",
         text="<html></html>",
         headers={"Content-Type": "text/html"},
     )
-    vulnerable_url = f"http://example.com/page1?{urlencode({'url': payload_value})}"
+    vulnerable_url = f"http://example.com/redirect?{urlencode({'url': payload_value})}"
     requests_mock.get(
         vulnerable_url,
         status_code=302,
@@ -272,6 +314,29 @@ def test_strip_fragment_removes_fragment_but_keeps_query():
     assert _strip_fragment("http://example.com/page") == "http://example.com/page"
 
 
+def test_crawl_probes_the_starting_url_as_an_entry_point(requests_mock):
+    # The starting URL is never discovered as an outbound "link" the way
+    # every other crawled page is (nothing links to it), so it would never
+    # get the Tier 2 guessed-parameter battery unless crawl() explicitly
+    # probes it. Here the home page itself (not a link on it) is vulnerable.
+    requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
+    requests_mock.get(
+        "http://example.com", text="<html></html>", headers={"Content-Type": "text/html"}
+    )
+    requests_mock.get(
+        "http://example.com?url=https%3A%2F%2Fevil.example.com",
+        status_code=302,
+        headers={"Location": "https://evil.example.com"},
+    )
+
+    config = make_config(max_pages=1)
+    scanner = RedirectScanner("http://example.com", config)
+    result = scanner.crawl()
+
+    assert len(result.vulnerabilities) == 1
+    assert result.vulnerabilities[0].type == "param"
+
+
 def test_crawl_deduplicates_fragment_variants_and_fetches_page_once(requests_mock):
     # The catch-all must be registered first: requests_mock gives priority to
     # the most recently registered matcher, so the specific URLs below
@@ -300,6 +365,11 @@ def test_crawl_deduplicates_fragment_variants_and_fetches_page_once(requests_moc
 def test_crawl_fetches_the_current_page_only_once_for_links_and_forms(requests_mock):
     # Before the fix, `scan_page_for_redirects` (link extraction) and
     # `scan_form_for_redirects` each fetched the current page separately.
+    # The page under test is the crawl's starting URL with a form and no
+    # outbound links: the Tier 2 self-probe on it (see
+    # test_crawl_probes_the_starting_url_as_an_entry_point) only tests
+    # parameters and deliberately skips the JS-redirect check precisely so it
+    # doesn't add a fetch of its own here.
     requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
     requests_mock.get(
         "http://example.com",
@@ -337,3 +407,81 @@ def test_scan_page_for_redirects_deduplicates_repeated_links(requests_mock):
     links = scanner.scan_page_for_redirects("http://example.com")
 
     assert links.count("http://example.com/page1") == 1
+
+
+def test_looks_like_entry_point():
+    from redirectme.scanner import _looks_like_entry_point
+
+    assert _looks_like_entry_point("http://example.com/login")
+    assert _looks_like_entry_point("http://example.com/auth/sso?state=1")
+    assert _looks_like_entry_point("http://example.com/account/logout")
+    assert not _looks_like_entry_point("http://example.com/about-us")
+    assert not _looks_like_entry_point("http://example.com/products/42")
+
+
+def test_build_test_url_replaces_existing_param_instead_of_duplicating():
+    from redirectme.scanner import _build_test_url
+
+    url = _build_test_url("http://example.com/go?next=/home&lang=en", "next", "https://evil.example.com")
+    assert url.count("next=") == 1
+    assert "https%3A%2F%2Fevil.example.com" in url
+    assert "lang=en" in url  # other existing params are preserved
+
+
+def test_tier1_tests_a_links_own_existing_param_even_off_entry_points(requests_mock):
+    # "/content" matches no ENTRY_POINT_HINTS keyword, so it must not get the
+    # guessed-parameter battery — but it already carries `returnUrl` in its
+    # own query string, which Tier 1 must still test regardless.
+    requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
+    requests_mock.get(
+        "http://example.com",
+        text='<html><body><a href="/content?returnUrl=/ok">x</a></body></html>',
+        headers={"Content-Type": "text/html"},
+    )
+    requests_mock.get(
+        "http://example.com/content",
+        text="<html></html>",
+        headers={"Content-Type": "text/html"},
+        complete_qs=False,
+    )
+    requests_mock.get(
+        "http://example.com/content?returnUrl=https%3A%2F%2Fevil.example.com",
+        status_code=302,
+        headers={"Location": "https://evil.example.com"},
+    )
+
+    config = make_config(max_pages=2)
+    scanner = RedirectScanner("http://example.com", config)
+    result = scanner.crawl()
+
+    assert len(result.vulnerabilities) == 1
+    assert result.vulnerabilities[0].detail == "returnUrl=https://evil.example.com"
+
+
+def test_tier2_skips_guessed_params_on_ordinary_non_entry_point_links(requests_mock):
+    # "/content" has no query string of its own and matches no entry-point
+    # keyword, so the guessed DEFAULT_REDIRECT_PARAMS battery (Tier 2) must
+    # NOT run on it — even though it would be "vulnerable" to a guessed `url`
+    # param, that's not how it's reachable and testing it here doesn't scale.
+    requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
+    requests_mock.get(
+        "http://example.com",
+        text='<html><body><a href="/content">x</a></body></html>',
+        headers={"Content-Type": "text/html"},
+    )
+    requests_mock.get(
+        "http://example.com/content",
+        text="<html></html>",
+        headers={"Content-Type": "text/html"},
+    )
+    requests_mock.get(
+        "http://example.com/content?url=https%3A%2F%2Fevil.example.com",
+        status_code=302,
+        headers={"Location": "https://evil.example.com"},
+    )
+
+    config = make_config(max_pages=2)
+    scanner = RedirectScanner("http://example.com", config)
+    result = scanner.crawl()
+
+    assert len(result.vulnerabilities) == 0

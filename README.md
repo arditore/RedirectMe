@@ -55,10 +55,17 @@ malicious site.
   time, or lets you type a new one directly.
 - 🕷️ **Multithreaded crawl**, limited to the same domain and a configurable
   number of pages.
-- 🔗 **Classic redirect parameters** (`url`, `redirect`, `next`, `goto`...)
-  tested on every link.
-- 🧪 **Bypass payloads** (protocol-relative `//`, `@` trick, encoding, etc.)
-  to catch variants that naive filters let through.
+- 🎯 **Two-tier parameter targeting**: every link's *own* existing query
+  parameters are always tested (the strongest signal — the app already uses
+  them), while the full list of guessed redirect parameter names (`url`,
+  `redirect`, `next`, `goto`...) is reserved for plausible entry points
+  (login/logout/SSO, anything with "redirect"/"return"/"next" in its own
+  URL, and the scan's starting page) instead of firing on every link on the
+  site. Faster and more focused than testing everything everywhere.
+- 🧪 **11 bypass payload variants per parameter** (protocol-relative `//`,
+  backslash, duplicate scheme, userinfo `@` trick, `%2F` and double `%2F`
+  encoding, subdomain/path confusion, a control-character prefix, missing
+  slashes) to catch what naive filters let through.
 - 🧩 **JavaScript redirect detection** (`window.location.href`,
   `location.replace`).
 - 📝 **Form scanning** by injecting the test URL into redirect fields.
@@ -221,8 +228,12 @@ Reports are written to `reports/` (configurable).
 1. **Crawl**: the script starts from the target URL and follows internal
    links (same domain name only), up to `max_pages` pages, respecting
    `robots.txt` if enabled.
-2. **Multithreaded injection**: for each link, every known parameter is
-   tested with the external URL and, if enabled, its bypass variants.
+2. **Multithreaded, two-tier injection**: every link's own existing query
+   parameters are always tested with the external URL and, if enabled, its
+   bypass variants (Tier 1). The full list of guessed parameter names gets
+   the same treatment, but only on the starting page and links that look
+   like an entry point — login/logout/SSO, or anything already mentioning
+   "redirect"/"return"/"next"/... in its own URL (Tier 2).
 3. **Verification**: an HTTP 3xx response whose `Location` header points to
    the external URL is considered an open redirect.
 4. **JavaScript & forms**: the same principle is applied to redirects

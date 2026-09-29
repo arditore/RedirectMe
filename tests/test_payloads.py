@@ -15,6 +15,11 @@ def test_build_payloads_with_bypass_includes_known_variants():
         "https:https://evil.example.com",
         "example.com@evil.example.com",
         "%2F%2Fevil.example.com",
+        "https://example.com.evil.example.com",
+        "https://evil.example.com/example.com",
+        "%252F%252Fevil.example.com",
+        "\t//evil.example.com",
+        "https:evil.example.com",
     ]
 
 
