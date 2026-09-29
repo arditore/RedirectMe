@@ -9,7 +9,7 @@ from pathlib import Path
 
 import questionary
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from redirectme.config import AppConfig, load_config, save_config
@@ -76,6 +76,14 @@ def _validate_float(text: str) -> bool | str:
         return True
     except ValueError:
         return "Please enter a number."
+
+
+def _truncate(text: str, max_len: int = 70) -> str:
+    """Shortens `text` for a single-line progress display so a long test URL
+    doesn't wrap or push the elapsed-time column off-screen."""
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
 
 
 def _validate_profile_name(text: str) -> bool | str:
@@ -167,8 +175,7 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
     progress = Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.fields[pages]} pages · {task.fields[vulns]} vulnerabilit(y/ies)"),
+        TextColumn("[dim]{task.fields[status]}[/dim]"),
         TimeElapsedColumn(),
         console=console,
     )
@@ -176,15 +183,23 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
     state = {"pages": 0, "vulns": 0}
     result: ScanResult
 
+    def _status_text() -> str:
+        pages_word = "page" if state["pages"] == 1 else "pages"
+        vulns_word = "vulnerability" if state["vulns"] == 1 else "vulnerabilities"
+        return f"{state['pages']} {pages_word} · {state['vulns']} {vulns_word}"
+
     with progress:
-        task_id = progress.add_task("🐧 Scanning (noot noot)...", pages=0, vulns=0)
+        task_id = progress.add_task("🐧 Starting scan...", status=_status_text())
 
         def on_progress(event: str, data: dict) -> None:
             if event == "page_scanned":
                 state["pages"] = data["count"]
+                progress.update(task_id, description=f"🐧 Scanning {_truncate(data['url'])}")
+            elif event == "link_tested":
+                progress.update(task_id, description=f"🐧 Testing {_truncate(data['url'])}")
             elif event == "vulnerability_found":
                 state["vulns"] += 1
-            progress.update(task_id, pages=state["pages"], vulns=state["vulns"])
+            progress.update(task_id, status=_status_text())
 
         scanner = RedirectScanner(target, scan_config, on_progress=on_progress)
         try:
