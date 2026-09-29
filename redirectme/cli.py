@@ -9,6 +9,7 @@ from pathlib import Path
 
 import questionary
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
@@ -194,9 +195,13 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
         def on_progress(event: str, data: dict) -> None:
             if event == "page_scanned":
                 state["pages"] = data["count"]
-                progress.update(task_id, description=f"🐧 Scanning {_truncate(data['url'])}")
+                progress.update(
+                    task_id, description=f"🐧 Scanning {escape(_truncate(data['url']))}"
+                )
             elif event == "link_tested":
-                progress.update(task_id, description=f"🐧 Testing {_truncate(data['url'])}")
+                progress.update(
+                    task_id, description=f"🐧 Testing {escape(_truncate(data['url']))}"
+                )
             elif event == "vulnerability_found":
                 state["vulns"] += 1
             progress.update(task_id, status=_status_text())
@@ -234,10 +239,13 @@ def _print_summary(console: Console, result: ScanResult) -> None:
     table.add_column("Status")
     table.add_column("URL")
     table.add_column("Detail")
+    # vuln.url/vuln.detail and result.target come from the scanned site's own
+    # content (crawled links, form actions...) — untrusted, and Rich Table cells
+    # parse plain strings as markup, so they must be escaped before display.
     for vuln in result.vulnerabilities:
-        table.add_row("[red]VULNERABLE[/red]", vuln.url, vuln.detail)
+        table.add_row("[red]VULNERABLE[/red]", escape(vuln.url), escape(vuln.detail))
     if not result.vulnerabilities:
-        table.add_row("[green]SAFE[/green]", result.target, "No open redirect detected")
+        table.add_row("[green]SAFE[/green]", escape(result.target), "No open redirect detected")
     console.print(table)
     console.print(
         f"{len(result.vulnerabilities)} open redirect(s) across {result.pages_scanned} "
