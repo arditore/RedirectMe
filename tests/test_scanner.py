@@ -273,9 +273,9 @@ def test_strip_fragment_removes_fragment_but_keeps_query():
 
 
 def test_crawl_deduplicates_fragment_variants_and_fetches_page_once(requests_mock):
-    # Le catch-all doit être enregistré en premier : requests_mock donne la priorité
-    # au matcher le plus récemment enregistré, donc les URL spécifiques ci-dessous
-    # (enregistrées après) doivent primer sur lui.
+    # The catch-all must be registered first: requests_mock gives priority to
+    # the most recently registered matcher, so the specific URLs below
+    # (registered after) must take precedence over it.
     requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
     requests_mock.get(
         "http://example.com",
@@ -292,14 +292,14 @@ def test_crawl_deduplicates_fragment_variants_and_fetches_page_once(requests_moc
     scanner = RedirectScanner("http://example.com", config)
     result = scanner.crawl()
 
-    # "/page1#a" et "/page1#b" sont la même ressource : une seule page comptée en plus
-    # de la page d'accueil, pas deux.
+    # "/page1#a" and "/page1#b" are the same resource: only one extra page
+    # counted beyond the home page, not two.
     assert result.pages_scanned == 2
 
 
 def test_crawl_fetches_the_current_page_only_once_for_links_and_forms(requests_mock):
-    # Avant le correctif, `scan_page_for_redirects` (extraction de liens) et
-    # `scan_form_for_redirects` récupéraient chacun la page courante séparément.
+    # Before the fix, `scan_page_for_redirects` (link extraction) and
+    # `scan_form_for_redirects` each fetched the current page separately.
     requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
     requests_mock.get(
         "http://example.com",

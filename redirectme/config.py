@@ -1,4 +1,4 @@
-"""Chargement et sauvegarde de la configuration RedirectMe (config.ini)."""
+"""Loading and saving RedirectMe's configuration (config.ini)."""
 from __future__ import annotations
 
 import configparser
@@ -9,7 +9,7 @@ from redirectme.report import SUPPORTED_REPORT_FORMATS as VALID_REPORT_FORMATS
 
 
 class ConfigError(ValueError):
-    """Levée quand config.ini contient une valeur invalide."""
+    """Raised when config.ini contains an invalid value."""
 
 
 @dataclass
@@ -80,17 +80,17 @@ def load_config(path: str = "config.ini") -> AppConfig:
             respect_robots=scan.getboolean("respect_robots"),
             report_format=report.get("default_format", AppConfig.report_format),
             report_output_dir=report.get("output_dir", AppConfig.report_output_dir),
-            # .get() avec valeur par défaut : absent des config.ini générés avant
-            # l'ajout de ce champ, ne doit pas faire échouer le chargement.
+            # .get() with a default: absent from config.ini files generated
+            # before this field was added, must not make loading fail.
             last_target=general.get("last_target", ""),
         )
     except (KeyError, ValueError) as exc:
-        raise ConfigError(f"config.ini invalide ({path}) : {exc}") from exc
+        raise ConfigError(f"Invalid config.ini ({path}): {exc}") from exc
 
     if config.report_format not in VALID_REPORT_FORMATS:
         raise ConfigError(
-            f"Format de rapport invalide dans config.ini : {config.report_format!r} "
-            f"(attendu : {sorted(VALID_REPORT_FORMATS)})"
+            f"Invalid report format in config.ini: {config.report_format!r} "
+            f"(expected: {sorted(VALID_REPORT_FORMATS)})"
         )
 
     return config

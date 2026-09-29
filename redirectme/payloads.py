@@ -1,4 +1,4 @@
-"""Paramètres de redirection connus et payloads de contournement."""
+"""Known redirect parameters and bypass payloads."""
 from __future__ import annotations
 
 from urllib.parse import urlsplit
@@ -14,7 +14,7 @@ DEFAULT_REDIRECT_PARAMS = [
 def build_payloads(
     param: str, target_host: str, external_url: str, use_bypass: bool = True
 ) -> list[str]:
-    """Retourne les valeurs à tester pour `param` afin de détecter une redirection ouverte."""
+    """Returns the values to test for `param` in order to detect an open redirect."""
     external_host = urlsplit(external_url).netloc or external_url
     values = [external_url]
     if use_bypass:

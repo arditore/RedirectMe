@@ -21,7 +21,7 @@ def test_run_cli_cancels_without_confirmation(tmp_path, monkeypatch, capsys):
     exit_code = run_cli(args)
 
     assert exit_code == 1
-    assert "annulé" in capsys.readouterr().out.lower()
+    assert "cancelled" in capsys.readouterr().out.lower()
 
 
 def test_run_cli_rejects_scheme_less_target(tmp_path, monkeypatch, capsys):
@@ -72,4 +72,4 @@ def test_run_cli_returns_distinct_exit_code_when_no_pages_scanned(tmp_path, monk
 
     assert exit_code == 3
     out = capsys.readouterr()
-    assert "aucune" in (out.out + out.err).lower()
+    assert "no page" in (out.out + out.err).lower()

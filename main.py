@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RedirectMe - scanner de redirections ouvertes (open redirect)."""
+"""RedirectMe - open redirect scanner."""
 from __future__ import annotations
 
 import argparse
@@ -14,30 +14,30 @@ from redirectme.scanner import RedirectScanner
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Scanne un site web à la recherche de redirections ouvertes (open redirects).",
+        description="Scans a website for open redirects.",
     )
     parser.add_argument(
-        "target", nargs="?", help="URL de base du site à scanner (ex : https://example.com)"
+        "target", nargs="?", help="Base URL of the site to scan (e.g.: https://example.com)"
     )
     parser.add_argument(
-        "--no-interactive", action="store_true", help="Force le mode CLI (sans menu interactif)"
+        "--no-interactive", action="store_true", help="Force CLI mode (no interactive menu)"
     )
     parser.add_argument(
-        "--yes", action="store_true", help="Confirme automatiquement l'autorisation de scan"
+        "--yes", action="store_true", help="Automatically confirm scan authorization"
     )
     parser.add_argument(
-        "--config", default="config.ini", help="Chemin du fichier config.ini (défaut : %(default)s)"
+        "--config", default="config.ini", help="Path to the config.ini file (default: %(default)s)"
     )
-    parser.add_argument("--external-url", default=None, help="Surcharge l'URL externe de test")
-    parser.add_argument("--max-pages", type=int, default=None, help="Surcharge le nombre max de pages")
+    parser.add_argument("--external-url", default=None, help="Override the external test URL")
+    parser.add_argument("--max-pages", type=int, default=None, help="Override the max number of pages")
     parser.add_argument(
         "--output-format",
         choices=sorted(SUPPORTED_REPORT_FORMATS),
         default=None,
-        help="Surcharge le format de rapport",
+        help="Override the report format",
     )
-    parser.add_argument("--output-dir", default=None, help="Surcharge le dossier de sortie des rapports")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Affiche les logs détaillés")
+    parser.add_argument("--output-dir", default=None, help="Override the report output directory")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed logs")
     return parser.parse_args(argv)
 
 
@@ -48,7 +48,7 @@ def run_cli(args: argparse.Namespace) -> int:
 
     if not (args.target.startswith("http://") or args.target.startswith("https://")):
         print(
-            f"Erreur : l'URL cible doit commencer par http:// ou https:// (reçu : {args.target!r}).",
+            f"Error: the target URL must start with http:// or https:// (got: {args.target!r}).",
             file=sys.stderr,
         )
         return 2
@@ -64,39 +64,39 @@ def run_cli(args: argparse.Namespace) -> int:
         config.report_output_dir = args.output_dir
 
     if not args.yes:
-        confirm = input(f"Confirmez-vous être autorisé à scanner {args.target} ? (o/N) ").strip().lower()
-        if confirm != "o":
-            print("Scan annulé (autorisation non confirmée).")
+        confirm = input(f"Are you authorized to scan {args.target}? (y/N) ").strip().lower()
+        if confirm != "y":
+            print("Scan cancelled (authorization not confirmed).")
             return 1
 
-    print(f"🐧 noot noot — scan de {args.target} à la recherche de redirections ouvertes...\n")
+    print(f"🐧 noot noot — scanning {args.target} for open redirects...\n")
     scanner = RedirectScanner(args.target, config)
     try:
         result = scanner.crawl()
     except KeyboardInterrupt:
-        print("\nScan interrompu par l'utilisateur.")
+        print("\nScan interrupted by the user.")
         result = scanner.result()
 
     print(
-        f"\n{len(result.vulnerabilities)} redirection(s) ouverte(s) détectée(s) sur "
-        f"{result.pages_scanned} page(s) explorée(s)."
+        f"\n{len(result.vulnerabilities)} open redirect(s) detected across "
+        f"{result.pages_scanned} page(s) scanned."
     )
 
     report_path = generate_report(result, config.report_format, config.report_output_dir)
-    print(f"Rapport enregistré dans {report_path}")
+    print(f"Report saved to {report_path}")
 
     if result.pages_scanned == 0:
         print(
-            "Avertissement : aucune page n'a pu être scannée (cible injoignable ou "
-            "bloquée) — le scan n'a pas réellement eu lieu.",
+            "Warning: no page could be scanned (target unreachable or blocked) — "
+            "the scan did not actually happen.",
             file=sys.stderr,
         )
         return 3
 
     if result.vulnerabilities:
-        print("🐧 Noot noot ! Le pingouin a trouvé quelque chose.")
+        print("🐧 Noot noot! The penguin found something.")
     else:
-        print("🐧 Noot noot ! Rien à signaler, la banquise est saine.")
+        print("🐧 Noot noot! Nothing to report, the ice floe is clean.")
 
     return 1 if result.vulnerabilities else 0
 
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_cli(args)
 
     if args.no_interactive:
-        print("Erreur : --no-interactive nécessite une URL cible.", file=sys.stderr)
+        print("Error: --no-interactive requires a target URL.", file=sys.stderr)
         return 2
 
     run_interactive_menu(config_path=args.config)

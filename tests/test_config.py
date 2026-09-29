@@ -25,7 +25,7 @@ def test_save_and_load_round_trip(tmp_path):
 
 
 def test_load_config_defaults_last_target_when_absent(tmp_path):
-    """config.ini écrits avant l'ajout de last_target ne doivent pas faire échouer le chargement."""
+    """config.ini files written before last_target was added must still load fine."""
     config_path = tmp_path / "config.ini"
     config_path.write_text(
         "[general]\nexternal_url = https://evil.example.com\nmax_pages = 10\n"

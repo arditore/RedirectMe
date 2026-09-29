@@ -33,7 +33,7 @@ def test_generate_txt_report(tmp_path):
     path = generate_report(make_result(), "txt", str(tmp_path))
     content = path.read_text(encoding="utf-8")
     assert "https://example.com" in content
-    assert "VULNÉRABLE" in content
+    assert "VULNERABLE" in content
 
 
 def test_generate_json_report(tmp_path):
@@ -139,8 +139,8 @@ def test_html_report_escapes_xss_payload_in_target(tmp_path):
 
 
 def test_generate_csv_report_neutralizes_formula_injection(tmp_path):
-    """Une URL/détail commençant par =, +, -, @ (venant du site scanné, non fiable)
-    ne doit pas être interprété comme une formule par Excel/Sheets à l'ouverture."""
+    """A url/detail starting with =, +, -, @ (coming from the scanned site,
+    untrusted) must not be interpreted as a formula by Excel/Sheets on open."""
     result = ScanResult(
         target="https://example.com",
         started_at=datetime(2026, 9, 18, 10, 30, 0),

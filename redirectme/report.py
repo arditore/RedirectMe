@@ -1,4 +1,4 @@
-"""Génération de rapports de scan (TXT / JSON / CSV / HTML)."""
+"""Scan report generation (TXT / JSON / CSV / HTML)."""
 from __future__ import annotations
 
 import csv
@@ -26,14 +26,14 @@ class ScanResult:
 
 
 class UnsupportedFormatError(ValueError):
-    """Levée quand le format de rapport demandé n'est pas supporté."""
+    """Raised when the requested report format is not supported."""
 
 
 def generate_report(result: ScanResult, fmt: str, output_dir: str = "reports") -> Path:
     fmt = fmt.lower()
     writer = _WRITERS.get(fmt)
     if writer is None:
-        raise UnsupportedFormatError(f"Format de rapport non supporté : {fmt}")
+        raise UnsupportedFormatError(f"Unsupported report format: {fmt}")
 
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
@@ -45,17 +45,17 @@ def generate_report(result: ScanResult, fmt: str, output_dir: str = "reports") -
 
 def _write_txt(result: ScanResult, path: Path) -> None:
     lines = [
-        f"Cible : {result.target}",
-        f"Date : {result.started_at.isoformat()}",
-        f"Durée : {result.duration_s:.1f}s",
-        f"Pages explorées : {result.pages_scanned}",
+        f"Target: {result.target}",
+        f"Date: {result.started_at.isoformat()}",
+        f"Duration: {result.duration_s:.1f}s",
+        f"Pages scanned: {result.pages_scanned}",
         "",
     ]
     if result.vulnerabilities:
         for vuln in result.vulnerabilities:
-            lines.append(f"[VULNÉRABLE] {vuln.url} ({vuln.type}) - {vuln.detail}")
+            lines.append(f"[VULNERABLE] {vuln.url} ({vuln.type}) - {vuln.detail}")
     else:
-        lines.append("Aucune redirection ouverte détectée.")
+        lines.append("No open redirect detected.")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -76,10 +76,10 @@ _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _csv_safe(value: str) -> str:
-    """Neutralise l'injection de formule CSV (valeur issue du site scanné, non fiable) :
-    un champ commençant par =, +, -, @ ou une tabulation/retour chariot est interprété comme
-    une formule par Excel/Sheets à l'ouverture. On le préfixe d'un guillemet simple pour le
-    forcer en texte, comme le recommande l'OWASP."""
+    """Neutralize CSV formula injection (a value coming from the scanned site,
+    untrusted): a field starting with =, +, -, @ or a tab/carriage return is
+    interpreted as a formula by Excel/Sheets on open. Prefix it with a single
+    quote to force it to text, as recommended by OWASP."""
     if value.startswith(_CSV_FORMULA_PREFIXES):
         return "'" + value
     return value
@@ -97,15 +97,15 @@ def _write_csv(result: ScanResult, path: Path) -> None:
 
 def _write_html(result: ScanResult, path: Path) -> None:
     rows = "\n".join(
-        f"<tr><td class='vuln'>VULNÉRABLE</td><td>{html.escape(v.type)}</td><td>{html.escape(v.url)}</td><td>{html.escape(v.detail)}</td></tr>"
+        f"<tr><td class='vuln'>VULNERABLE</td><td>{html.escape(v.type)}</td><td>{html.escape(v.url)}</td><td>{html.escape(v.detail)}</td></tr>"
         for v in result.vulnerabilities
-    ) or "<tr><td colspan='4'>Aucune redirection ouverte détectée.</td></tr>"
+    ) or "<tr><td colspan='4'>No open redirect detected.</td></tr>"
 
     html_content = f"""<!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Rapport RedirectMe - {html.escape(result.target)}</title>
+<title>RedirectMe Report - {html.escape(result.target)}</title>
 <style>
 body {{ font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }}
 h1 {{ color: #38bdf8; }}
@@ -117,13 +117,13 @@ th {{ color: #94a3b8; text-transform: uppercase; font-size: 0.8rem; }}
 </style>
 </head>
 <body>
-<h1>Rapport RedirectMe</h1>
-<p class="summary">Cible : {html.escape(result.target)}<br>
-Date : {result.started_at.isoformat()}<br>
-Durée : {result.duration_s:.1f}s &middot; Pages explorées : {result.pages_scanned} &middot;
-Vulnérabilités : {len(result.vulnerabilities)}</p>
+<h1>RedirectMe Report</h1>
+<p class="summary">Target: {html.escape(result.target)}<br>
+Date: {result.started_at.isoformat()}<br>
+Duration: {result.duration_s:.1f}s &middot; Pages scanned: {result.pages_scanned} &middot;
+Vulnerabilities: {len(result.vulnerabilities)}</p>
 <table>
-<tr><th>Statut</th><th>Type</th><th>URL</th><th>Détail</th></tr>
+<tr><th>Status</th><th>Type</th><th>URL</th><th>Detail</th></tr>
 {rows}
 </table>
 </body>
@@ -138,7 +138,8 @@ _WRITERS = {
     "html": _write_html,
 }
 
-# Source unique de vérité pour les formats de rapport supportés : consommée par
-# redirectme.config (validation de config.ini), main.py et redirectme.cli (choix
-# proposés) pour éviter que la liste ne diverge de ce que ce module sait réellement écrire.
+# Single source of truth for the supported report formats: consumed by
+# redirectme.config (config.ini validation), main.py and redirectme.cli
+# (offered choices) so the list can't drift from what this module can
+# actually write.
 SUPPORTED_REPORT_FORMATS = frozenset(_WRITERS)

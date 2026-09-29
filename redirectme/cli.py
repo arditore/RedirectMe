@@ -1,4 +1,4 @@
-"""Menu interactif RedirectMe (rich + questionary)."""
+"""RedirectMe interactive menu (rich + questionary)."""
 from __future__ import annotations
 
 import copy
@@ -44,17 +44,17 @@ BANNER = r"""[bold cyan]      .--.
 ╚══════════════════════════╝[/bold cyan]"""
 
 FAREWELL_MESSAGES = [
-    "[cyan]🐧 Noot noot, à bientôt ![/cyan]",
-    "[cyan]🐧 Le pingouin s'en va se dandiner ailleurs. À bientôt ![/cyan]",
-    "[cyan]🐧 Fin de la banquise pour aujourd'hui. À bientôt ![/cyan]",
+    "[cyan]🐧 Noot noot, see you soon![/cyan]",
+    "[cyan]🐧 The penguin waddles off elsewhere. See you soon![/cyan]",
+    "[cyan]🐧 End of the ice floe for today. See you soon![/cyan]",
 ]
 
 MAIN_MENU_CHOICES = [
-    "Lancer un scan",
-    "Charger un profil de scan",
+    "Start a scan",
+    "Load a scan profile",
     "Configuration",
-    "Voir le dernier rapport",
-    "Quitter",
+    "View last report",
+    "Quit",
 ]
 
 
@@ -65,7 +65,7 @@ def _validate_int(text: str) -> bool | str:
         int(text)
         return True
     except ValueError:
-        return "Merci d'entrer un nombre entier."
+        return "Please enter a whole number."
 
 
 def _validate_float(text: str) -> bool | str:
@@ -75,14 +75,14 @@ def _validate_float(text: str) -> bool | str:
         float(text)
         return True
     except ValueError:
-        return "Merci d'entrer un nombre."
+        return "Please enter a number."
 
 
 def _validate_profile_name(text: str) -> bool | str:
-    # Doit rester cohérent avec PROFILE_NAME_RE de redirectme/profiles.py.
+    # Must stay consistent with PROFILE_NAME_RE in redirectme/profiles.py.
     if text and PROFILE_NAME_RE.match(text):
         return True
-    return "Le nom du profil ne doit contenir que des lettres, chiffres, '-' et '_'."
+    return "Profile names may only contain letters, digits, '-' and '_'."
 
 
 def run_interactive_menu(config_path: str = "config.ini") -> None:
@@ -92,35 +92,35 @@ def run_interactive_menu(config_path: str = "config.ini") -> None:
 
     while True:
         console.print(BANNER)
-        choice = questionary.select("🐧 Que voulez-vous faire ?", choices=MAIN_MENU_CHOICES).ask()
-        if choice is None or choice == "Quitter":
+        choice = questionary.select("🐧 What would you like to do?", choices=MAIN_MENU_CHOICES).ask()
+        if choice is None or choice == "Quit":
             console.print(random.choice(FAREWELL_MESSAGES))
             return
-        if choice == "Lancer un scan":
+        if choice == "Start a scan":
             report_path = _menu_launch_scan(console, config, config_path)
             if report_path:
                 last_report = report_path
-        elif choice == "Charger un profil de scan":
+        elif choice == "Load a scan profile":
             config = _menu_load_profile(console, config)
         elif choice == "Configuration":
             config = _menu_configuration(console, config, config_path)
-        elif choice == "Voir le dernier rapport":
+        elif choice == "View last report":
             _menu_view_last_report(console, last_report)
 
 
 def _prompt_target_url() -> str | None:
     return questionary.text(
-        "URL cible à scanner (ex: https://example.com) :",
+        "Target URL to scan (e.g.: https://example.com):",
         validate=lambda text: bool(text)
         and (text.startswith("http://") or text.startswith("https://"))
-        or "L'URL doit commencer par http:// ou https://",
+        or "The URL must start with http:// or https://",
     ).ask()
 
 
 def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> Path | None:
     if config.last_target:
         reuse = questionary.confirm(
-            f"Scanner à nouveau {config.last_target} ?", default=True
+            f"Scan {config.last_target} again?", default=True
         ).ask()
         if reuse is None:
             return None
@@ -135,40 +135,40 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
         try:
             save_config(config, config_path)
         except OSError as exc:
-            console.print(f"[yellow]Impossible d'enregistrer la dernière cible : {exc}[/yellow]")
+            console.print(f"[yellow]Could not save the last target: {exc}[/yellow]")
 
-    # Les réglages édités ici sont ponctuels (propres à ce scan) et ne doivent
-    # pas modifier la configuration persistante de la session (cf. menu
-    # "Configuration", qui lui reste sur `config`).
+    # Settings edited here are one-off (specific to this scan) and must not
+    # change the persistent session configuration (see the "Configuration"
+    # menu, which keeps working on `config`).
     scan_config = copy.deepcopy(config)
 
-    table = Table(title="Options du scan")
+    table = Table(title="Scan options")
     table.add_column("Option")
-    table.add_column("Valeur")
-    table.add_row("URL de redirection testée", scan_config.external_url)
-    table.add_row("Pages max", str(scan_config.max_pages))
+    table.add_column("Value")
+    table.add_row("Redirect URL under test", scan_config.external_url)
+    table.add_row("Max pages", str(scan_config.max_pages))
     table.add_row("Threads", str(scan_config.max_workers))
     table.add_row(
-        "Payloads de contournement", "oui" if scan_config.use_bypass_payloads else "non"
+        "Bypass payloads", "yes" if scan_config.use_bypass_payloads else "no"
     )
-    table.add_row("Format de rapport", scan_config.report_format)
+    table.add_row("Report format", scan_config.report_format)
     console.print(table)
 
-    if not questionary.confirm("Utiliser ces options ?", default=True).ask():
+    if not questionary.confirm("Use these options?", default=True).ask():
         scan_config = _edit_scan_options(scan_config)
 
     authorized = questionary.confirm(
-        f"Confirmez-vous être autorisé à tester {target} ?", default=False
+        f"Are you authorized to test {target}?", default=False
     ).ask()
     if not authorized:
-        console.print("[yellow]Scan annulé (autorisation non confirmée).[/yellow]")
+        console.print("[yellow]Scan cancelled (authorization not confirmed).[/yellow]")
         return None
 
     progress = Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
-        TextColumn("{task.fields[pages]} pages · {task.fields[vulns]} vulnérabilité(s)"),
+        TextColumn("{task.fields[pages]} pages · {task.fields[vulns]} vulnerabilit(y/ies)"),
         TimeElapsedColumn(),
         console=console,
     )
@@ -177,7 +177,7 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
     result: ScanResult
 
     with progress:
-        task_id = progress.add_task("🐧 Scan en cours (noot noot)...", pages=0, vulns=0)
+        task_id = progress.add_task("🐧 Scanning (noot noot)...", pages=0, vulns=0)
 
         def on_progress(event: str, data: dict) -> None:
             if event == "page_scanned":
@@ -191,74 +191,74 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
             result = scanner.crawl()
         except KeyboardInterrupt:
             result = scanner.result()
-            console.print("[yellow]Scan interrompu.[/yellow]")
+            console.print("[yellow]Scan interrupted.[/yellow]")
 
     _print_summary(console, result)
     report_path = generate_report(result, scan_config.report_format, scan_config.report_output_dir)
-    console.print(f"[green]Rapport enregistré dans {report_path}[/green]")
+    console.print(f"[green]Report saved to {report_path}[/green]")
 
     if report_path.suffix == ".html" and questionary.confirm(
-        "Ouvrir le rapport dans le navigateur ?", default=True
+        "Open the report in the browser?", default=True
     ).ask():
         webbrowser.open(report_path.resolve().as_uri())
 
-    if questionary.confirm("Sauvegarder ces réglages comme profil ?", default=False).ask():
-        name = questionary.text("Nom du profil :", validate=_validate_profile_name).ask()
+    if questionary.confirm("Save these settings as a profile?", default=False).ask():
+        name = questionary.text("Profile name:", validate=_validate_profile_name).ask()
         if name:
             try:
                 save_profile(name, scan_config)
-                console.print(f"[green]Profil '{name}' sauvegardé.[/green]")
+                console.print(f"[green]Profile '{name}' saved.[/green]")
             except InvalidProfileNameError as exc:
-                console.print(f"[red]Nom de profil invalide : {exc}[/red]")
+                console.print(f"[red]Invalid profile name: {exc}[/red]")
 
     return report_path
 
 
 def _print_summary(console: Console, result: ScanResult) -> None:
-    table = Table(title="Résumé du scan")
-    table.add_column("Statut")
+    table = Table(title="Scan summary")
+    table.add_column("Status")
     table.add_column("URL")
-    table.add_column("Détail")
+    table.add_column("Detail")
     for vuln in result.vulnerabilities:
-        table.add_row("[red]VULNÉRABLE[/red]", vuln.url, vuln.detail)
+        table.add_row("[red]VULNERABLE[/red]", vuln.url, vuln.detail)
     if not result.vulnerabilities:
-        table.add_row("[green]SÛR[/green]", result.target, "Aucune redirection ouverte détectée")
+        table.add_row("[green]SAFE[/green]", result.target, "No open redirect detected")
     console.print(table)
     console.print(
-        f"{len(result.vulnerabilities)} redirection(s) ouverte(s) sur {result.pages_scanned} "
-        f"page(s) explorée(s) en {result.duration_s:.1f}s."
+        f"{len(result.vulnerabilities)} open redirect(s) across {result.pages_scanned} "
+        f"page(s) scanned in {result.duration_s:.1f}s."
     )
     if result.vulnerabilities:
-        console.print("[red]🐧 Noot noot ! Le pingouin a trouvé quelque chose.[/red]")
+        console.print("[red]🐧 Noot noot! The penguin found something.[/red]")
     else:
-        console.print("[green]🐧 Noot noot ! Rien à signaler, la banquise est saine.[/green]")
+        console.print("[green]🐧 Noot noot! Nothing to report, the ice floe is clean.[/green]")
 
 
 def _edit_scan_options(config: AppConfig) -> AppConfig:
     config.external_url = (
-        questionary.text("URL de redirection testée :", default=config.external_url).ask()
+        questionary.text("Redirect URL under test:", default=config.external_url).ask()
         or config.external_url
     )
     config.max_pages = int(
         questionary.text(
-            "Pages max :", default=str(config.max_pages), validate=_validate_int
+            "Max pages:", default=str(config.max_pages), validate=_validate_int
         ).ask()
         or config.max_pages
     )
     config.max_workers = int(
         questionary.text(
-            "Threads :", default=str(config.max_workers), validate=_validate_int
+            "Threads:", default=str(config.max_workers), validate=_validate_int
         ).ask()
         or config.max_workers
     )
     use_bypass_answer = questionary.confirm(
-        "Activer les payloads de contournement ?", default=config.use_bypass_payloads
+        "Enable bypass payloads?", default=config.use_bypass_payloads
     ).ask()
     config.use_bypass_payloads = (
         use_bypass_answer if use_bypass_answer is not None else config.use_bypass_payloads
     )
     report_format_answer = questionary.select(
-        "Format de rapport :",
+        "Report format:",
         choices=sorted(SUPPORTED_REPORT_FORMATS),
         default=config.report_format,
     ).ask()
@@ -271,64 +271,64 @@ def _edit_scan_options(config: AppConfig) -> AppConfig:
 def _menu_load_profile(console: Console, config: AppConfig) -> AppConfig:
     profiles = list_profiles()
     if not profiles:
-        console.print("[yellow]Aucun profil sauvegardé.[/yellow]")
+        console.print("[yellow]No saved profiles.[/yellow]")
         return config
-    name = questionary.select("Choisissez un profil :", choices=profiles + ["Annuler"]).ask()
-    if not name or name == "Annuler":
+    name = questionary.select("Choose a profile:", choices=profiles + ["Cancel"]).ask()
+    if not name or name == "Cancel":
         return config
     try:
         loaded = load_profile(name)
     except (ProfileNotFoundError, InvalidProfileNameError) as exc:
-        console.print(f"[red]Profil introuvable ou invalide : {exc}[/red]")
+        console.print(f"[red]Profile not found or invalid: {exc}[/red]")
         return config
-    console.print(f"[green]Profil '{name}' chargé.[/green]")
+    console.print(f"[green]Profile '{name}' loaded.[/green]")
     return loaded
 
 
 def _menu_configuration(console: Console, config: AppConfig, config_path: str) -> AppConfig:
-    console.print("[bold]Configuration actuelle[/bold]")
+    console.print("[bold]Current configuration[/bold]")
     config = _edit_scan_options(config)
     config.timeout = int(
         questionary.text(
-            "Timeout HTTP (s) :", default=str(config.timeout), validate=_validate_int
+            "HTTP timeout (s):", default=str(config.timeout), validate=_validate_int
         ).ask()
         or config.timeout
     )
     config.min_delay = float(
         questionary.text(
-            "Délai minimum (s) :", default=str(config.min_delay), validate=_validate_float
+            "Minimum delay (s):", default=str(config.min_delay), validate=_validate_float
         ).ask()
         or config.min_delay
     )
     config.max_delay = float(
         questionary.text(
-            "Délai maximum (s) :", default=str(config.max_delay), validate=_validate_float
+            "Maximum delay (s):", default=str(config.max_delay), validate=_validate_float
         ).ask()
         or config.max_delay
     )
     respect_robots_answer = questionary.confirm(
-        "Respecter robots.txt ?", default=config.respect_robots
+        "Respect robots.txt?", default=config.respect_robots
     ).ask()
     config.respect_robots = (
         respect_robots_answer if respect_robots_answer is not None else config.respect_robots
     )
     try:
         save_config(config, config_path)
-        console.print("[green]Configuration sauvegardée.[/green]")
+        console.print("[green]Configuration saved.[/green]")
     except OSError as exc:
-        # save_config ne valide rien (ConfigError vient de load_config) ; l'échec
-        # réaliste ici est un problème d'écriture disque (permissions, chemin en lecture
-        # seule...).
-        console.print(f"[red]Impossible d'enregistrer la configuration : {exc}[/red]")
+        # save_config performs no validation (ConfigError comes from load_config);
+        # the realistic failure here is a disk write issue (permissions, a
+        # read-only path...).
+        console.print(f"[red]Could not save the configuration: {exc}[/red]")
     return config
 
 
 def _menu_view_last_report(console: Console, last_report: Path | None) -> None:
     if not last_report:
-        console.print("[yellow]Aucun rapport généré durant cette session.[/yellow]")
+        console.print("[yellow]No report generated during this session.[/yellow]")
         return
-    console.print(f"Dernier rapport : {last_report}")
+    console.print(f"Last report: {last_report}")
     if last_report.suffix == ".html" and questionary.confirm(
-        "Ouvrir dans le navigateur ?", default=True
+        "Open in the browser?", default=True
     ).ask():
         webbrowser.open(last_report.resolve().as_uri())

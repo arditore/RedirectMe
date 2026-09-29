@@ -1,4 +1,4 @@
-"""Moteur de scan RedirectMe : crawl, détection de redirections ouvertes."""
+"""RedirectMe scan engine: crawling, open redirect detection."""
 from __future__ import annotations
 
 import logging
@@ -34,9 +34,9 @@ JS_REDIRECT_REGEX = re.compile(
     r"(?:window\.location\.href|location\.replace)\s*\(\s*['\"]([^'\"]+)['\"]"
 )
 
-# Repère un "double schéma" du type "https:https://evil.example.com" (bypass de
-# validation naïve qui préfixe "https:" sans vérifier que la valeur en a déjà un)
-# afin de le neutraliser avant résolution.
+# Detects a "duplicate scheme" like "https:https://evil.example.com" (a bypass
+# of naive validation that prefixes "https:" without checking whether the
+# value already has one) so it can be neutralized before resolution.
 _DUPLICATE_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:(?=[a-zA-Z][a-zA-Z0-9+.-]*://)")
 
 logger = logging.getLogger("redirectme")
@@ -45,25 +45,25 @@ ProgressCallback = Callable[[str, dict], None]
 
 
 def same_site(url: str, target_netloc: str) -> bool:
-    """Vérifie que `url` appartient exactement au domaine ciblé (comparaison du netloc)."""
+    """Checks that `url` belongs exactly to the target domain (netloc comparison)."""
     return urlparse(url).netloc == target_netloc
 
 
 def _extract_hrefs(soup: BeautifulSoup) -> list[str]:
-    """Liens bruts (non résolus) d'une page déjà parsée."""
+    """Raw (unresolved) links from an already-parsed page."""
     return [a["href"] for a in soup.find_all("a", href=True)]
 
 
 def _strip_fragment(url: str) -> str:
-    """Retire le fragment (#...) d'une URL : il n'est jamais envoyé au serveur, donc
-    `/page` et `/page#section` sont la même ressource et ne doivent pas compter comme
-    deux pages distinctes vis-à-vis de `max_pages`/`visited_urls`."""
+    """Removes the fragment (#...) from a URL: it is never sent to the server, so
+    `/page` and `/page#section` are the same resource and must not count as two
+    distinct pages for `max_pages`/`visited_urls` purposes."""
     scheme, netloc, path, query, _fragment = urlsplit(url)
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
 class RedirectScanner:
-    """Explore un site et détecte les redirections ouvertes."""
+    """Crawls a site and detects open redirects."""
 
     def __init__(
         self, target: str, config: AppConfig, on_progress: Optional[ProgressCallback] = None
@@ -107,8 +107,8 @@ class RedirectScanner:
         params: dict | None = None,
         data: dict | None = None,
     ) -> requests.Response | None:
-        """Effectue une requête HTTP (GET par défaut) avec throttling par requête,
-        gestion des erreurs 429 et backoff exponentiel."""
+        """Performs an HTTP request (GET by default) with per-request throttling,
+        429 handling and exponential backoff."""
         retries = DEFAULT_MAX_RETRIES if retries is None else retries
         backoff_factor = 2
         for attempt in range(retries):
@@ -124,14 +124,14 @@ class RedirectScanner:
                     allow_redirects=False,
                 )
             except requests.exceptions.RequestException as exc:
-                logger.error("Erreur de requête sur %s : %s", url, exc)
+                logger.error("Request error on %s: %s", url, exc)
                 return None
 
             if response.status_code == 429:
                 retry_after = response.headers.get("Retry-After")
                 wait_time = int(retry_after) if retry_after else backoff_factor * (2**attempt)
                 logger.warning(
-                    "429 reçu sur %s, attente de %ss avant nouvel essai...", url, wait_time
+                    "429 received on %s, waiting %ss before retrying...", url, wait_time
                 )
                 time.sleep(wait_time)
                 continue
@@ -139,53 +139,53 @@ class RedirectScanner:
         return None
 
     def _fetch_and_parse(self, url: str) -> BeautifulSoup | None:
-        """Récupère une page HTML et la parse une seule fois. Partagé par l'extraction de
-        liens et le scan de formulaires pour éviter de refetcher la même page deux fois."""
+        """Fetches an HTML page and parses it only once. Shared by link extraction
+        and form scanning to avoid re-fetching the same page twice."""
         response = self.request_with_retry(url)
         if response is None or "text/html" not in response.headers.get("Content-Type", ""):
             return None
         return BeautifulSoup(response.text, "html.parser")
 
     def get_all_links(self, url: str) -> list[str]:
-        """Récupère tous les liens (href) présents sur une page."""
+        """Fetches all links (href) present on a page."""
         soup = self._fetch_and_parse(url)
         if soup is None:
             return []
         return _extract_hrefs(soup)
 
     def get_js_redirects(self, url: str) -> list[str]:
-        """Recherche les redirections déclenchées en JavaScript sur une page."""
+        """Looks for JavaScript-triggered redirects on a page."""
         response = self.request_with_retry(url)
         if response is None:
             return []
         return JS_REDIRECT_REGEX.findall(response.text)
 
     def is_open_redirect(self, test_url: str) -> bool:
-        """Vérifie si `test_url` redirige (3xx) vers l'hôte externe de test."""
+        """Checks whether `test_url` redirects (3xx) to the external test host."""
         response = self.request_with_retry(test_url, retries=3)
         if response is None or not (300 <= response.status_code < 400):
             return False
         return self._response_points_to_external(response, test_url)
 
     def _response_points_to_external(self, response: requests.Response, base_url: str) -> bool:
-        """Vérifie si l'en-tête Location de `response` pointe vers l'hôte externe configuré."""
+        """Checks whether `response`'s Location header points to the configured external host."""
         location = response.headers.get("Location", "")
         return self._location_points_to_external(base_url, location)
 
     def _location_points_to_external(self, base_url: str, location: str) -> bool:
-        """Résout `location` (relative ou absolue) par rapport à `base_url` et compare son
-        hôte à l'hôte externe configuré, en neutralisant les contournements courants générés
-        par `build_payloads` (URL protocole-relative, antislash, double-schéma, encodage
-        %2F, confusion d'autorité via userinfo)."""
+        """Resolves `location` (relative or absolute) against `base_url` and compares
+        its host to the configured external host, neutralizing the common bypasses
+        generated by `build_payloads` (protocol-relative URL, backslash, duplicate
+        scheme, %2F encoding, userinfo authority confusion)."""
         if not location:
             return False
         external_host = urlsplit(self.config.external_url).hostname
         if not external_host:
             return False
 
-        # Neutralise l'encodage %2F et la normalisation antislash->slash que les
-        # navigateurs appliquent (RFC non respectée, mais comportement réel des
-        # navigateurs pour les schémas "spéciaux").
+        # Neutralize %2F encoding and the backslash->slash normalization that
+        # browsers apply (not RFC-compliant, but real browser behavior for
+        # "special" schemes).
         candidate = unquote(location).replace("\\", "/")
         candidate = _DUPLICATE_SCHEME_RE.sub("", candidate)
 
@@ -196,9 +196,9 @@ class RedirectScanner:
         if _matches(candidate):
             return True
 
-        # Cas "hôte_cible@hôte_externe" reflété tel quel, sans schéma ni "//" : un
-        # serveur vulnérable peut l'insérer directement dans un contexte d'autorité
-        # (ex : Location construite comme "https://" + valeur).
+        # "target_host@external_host" reflected as-is, with no scheme or "//": a
+        # vulnerable server may insert it directly into an authority context
+        # (e.g. a Location built as "https://" + value).
         if "@" in candidate and "://" not in candidate and not candidate.startswith("/"):
             return _matches("//" + candidate)
 
@@ -223,22 +223,22 @@ class RedirectScanner:
                 absolute_js_url
             ):
                 self._report_vulnerability(
-                    "javascript", absolute_js_url, f"depuis {full_link}"
+                    "javascript", absolute_js_url, f"from {full_link}"
                 )
 
     def scan_page_for_redirects(
         self, page_url: str, soup: BeautifulSoup | None = None
     ) -> list[str]:
-        """Teste les liens d'une page (en parallèle) et retourne tous les liens absolus trouvés.
+        """Tests a page's links (in parallel) and returns all absolute links found.
 
-        Si `soup` est fourni (page déjà récupérée par l'appelant), évite une nouvelle requête.
+        If `soup` is provided (page already fetched by the caller), avoids a new request.
         """
         if soup is None:
             soup = self._fetch_and_parse(page_url)
         if soup is None:
             return []
-        # dict.fromkeys : déduplique en conservant l'ordre (plusieurs ancres/fragments
-        # vers la même URL ne doivent pas être testés plusieurs fois).
+        # dict.fromkeys: deduplicates while preserving order (several
+        # anchors/fragments pointing to the same URL must not be tested twice).
         links = list(
             dict.fromkeys(
                 _strip_fragment(urljoin(page_url, href)) for href in _extract_hrefs(soup)
@@ -250,9 +250,9 @@ class RedirectScanner:
         return links
 
     def scan_form_for_redirects(self, page_url: str, soup: BeautifulSoup | None = None) -> None:
-        """Soumet les formulaires d'une page en injectant l'URL externe dans les champs de
-        redirection. Si `soup` est fourni (page déjà récupérée par l'appelant), évite une
-        nouvelle requête."""
+        """Submits a page's forms, injecting the external URL into redirect fields.
+        If `soup` is provided (page already fetched by the caller), avoids a new
+        request."""
         if not self._is_allowed(page_url):
             return
         if soup is None:
@@ -295,17 +295,17 @@ class RedirectScanner:
             if form_response is None or not (300 <= form_response.status_code < 400):
                 continue
             if self._response_points_to_external(form_response, full_action):
-                self._report_vulnerability("form", full_action, "soumission de formulaire")
+                self._report_vulnerability("form", full_action, "form submission")
 
     def _report_vulnerability(self, vuln_type: str, url: str, detail: str) -> None:
         with self.vuln_lock:
             vuln = Vulnerability(type=vuln_type, url=url, detail=detail)
             self.vulnerabilities.append(vuln)
-        logger.warning("[VULNÉRABLE] %s (%s)", url, detail)
+        logger.warning("[VULNERABLE] %s (%s)", url, detail)
         self.on_progress("vulnerability_found", {"vulnerability": vuln})
 
     def crawl(self) -> ScanResult:
-        """Explore le site en largeur, jusqu'à `max_pages`, et scanne chaque page visitée."""
+        """Crawls the site breadth-first, up to `max_pages`, scanning every visited page."""
         self._start_time = datetime.now()
         self._start_perf = time.perf_counter()
         urls_to_visit = [self.target]
@@ -318,15 +318,15 @@ class RedirectScanner:
                 self.visited_urls.add(current_url)
 
             if not self._is_allowed(current_url):
-                logger.info("Ignoré (robots.txt) : %s", current_url)
+                logger.info("Skipped (robots.txt): %s", current_url)
                 continue
 
             self.on_progress(
                 "page_scanned", {"url": current_url, "count": len(self.visited_urls)}
             )
 
-            # Une seule requête pour la page : le HTML est réutilisé pour l'extraction de
-            # liens et le scan de formulaires au lieu d'être récupéré deux fois.
+            # A single request for the page: the HTML is reused for link
+            # extraction and form scanning instead of being fetched twice.
             page_soup = self._fetch_and_parse(current_url)
             links = self.scan_page_for_redirects(current_url, page_soup)
             self.scan_form_for_redirects(current_url, page_soup)
@@ -338,7 +338,7 @@ class RedirectScanner:
         return self.result()
 
     def result(self) -> ScanResult:
-        """Construit un `ScanResult` à partir de l'état courant (scan terminé ou interrompu)."""
+        """Builds a `ScanResult` from the current state (scan finished or interrupted)."""
         duration = (
             time.perf_counter() - self._start_perf if self._start_perf is not None else 0.0
         )
