@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from redirectme.config import AppConfig, ConfigError, load_config, save_config
+from redirectme.config import AppConfig, load_config, save_config
 from redirectme.profiles import (
     PROFILE_NAME_RE,
     InvalidProfileNameError,
@@ -21,7 +21,7 @@ from redirectme.profiles import (
     load_profile,
     save_profile,
 )
-from redirectme.report import ScanResult, generate_report
+from redirectme.report import SUPPORTED_REPORT_FORMATS, ScanResult, generate_report
 from redirectme.scanner import RedirectScanner
 
 if sys.platform == "win32":
@@ -239,7 +239,9 @@ def _edit_scan_options(config: AppConfig) -> AppConfig:
         use_bypass_answer if use_bypass_answer is not None else config.use_bypass_payloads
     )
     report_format_answer = questionary.select(
-        "Format de rapport :", choices=["html", "txt", "json", "csv"], default=config.report_format
+        "Format de rapport :",
+        choices=sorted(SUPPORTED_REPORT_FORMATS),
+        default=config.report_format,
     ).ask()
     config.report_format = (
         report_format_answer if report_format_answer is not None else config.report_format
@@ -294,8 +296,11 @@ def _menu_configuration(console: Console, config: AppConfig, config_path: str) -
     try:
         save_config(config, config_path)
         console.print("[green]Configuration sauvegardée.[/green]")
-    except ConfigError as exc:
-        console.print(f"[red]Erreur de configuration : {exc}[/red]")
+    except OSError as exc:
+        # save_config ne valide rien (ConfigError vient de load_config) ; l'échec
+        # réaliste ici est un problème d'écriture disque (permissions, chemin en lecture
+        # seule...).
+        console.print(f"[red]Impossible d'enregistrer la configuration : {exc}[/red]")
     return config
 
 

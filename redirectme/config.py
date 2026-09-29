@@ -5,7 +5,7 @@ import configparser
 from dataclasses import dataclass
 from pathlib import Path
 
-VALID_REPORT_FORMATS = {"txt", "json", "csv", "html"}
+from redirectme.report import SUPPORTED_REPORT_FORMATS as VALID_REPORT_FORMATS
 
 
 class ConfigError(ValueError):

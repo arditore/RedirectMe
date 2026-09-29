@@ -31,20 +31,14 @@ class UnsupportedFormatError(ValueError):
 
 def generate_report(result: ScanResult, fmt: str, output_dir: str = "reports") -> Path:
     fmt = fmt.lower()
+    writer = _WRITERS.get(fmt)
+    if writer is None:
+        raise UnsupportedFormatError(f"Format de rapport non supporté : {fmt}")
+
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
     timestamp = result.started_at.strftime("%Y%m%d-%H%M%S")
     path = directory / f"redirectme-{timestamp}.{fmt}"
-
-    writers = {
-        "txt": _write_txt,
-        "json": _write_json,
-        "csv": _write_csv,
-        "html": _write_html,
-    }
-    writer = writers.get(fmt)
-    if writer is None:
-        raise UnsupportedFormatError(f"Format de rapport non supporté : {fmt}")
     writer(result, path)
     return path
 
@@ -78,12 +72,27 @@ def _write_json(result: ScanResult, path: Path) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    """Neutralise l'injection de formule CSV (valeur issue du site scanné, non fiable) :
+    un champ commençant par =, +, -, @ ou une tabulation/retour chariot est interprété comme
+    une formule par Excel/Sheets à l'ouverture. On le préfixe d'un guillemet simple pour le
+    forcer en texte, comme le recommande l'OWASP."""
+    if value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _write_csv(result: ScanResult, path: Path) -> None:
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["type", "url", "detail"])
         for vuln in result.vulnerabilities:
-            writer.writerow([vuln.type, vuln.url, vuln.detail])
+            writer.writerow(
+                [_csv_safe(vuln.type), _csv_safe(vuln.url), _csv_safe(vuln.detail)]
+            )
 
 
 def _write_html(result: ScanResult, path: Path) -> None:
@@ -120,3 +129,16 @@ Vulnérabilités : {len(result.vulnerabilities)}</p>
 </body>
 </html>"""
     path.write_text(html_content, encoding="utf-8")
+
+
+_WRITERS = {
+    "txt": _write_txt,
+    "json": _write_json,
+    "csv": _write_csv,
+    "html": _write_html,
+}
+
+# Source unique de vérité pour les formats de rapport supportés : consommée par
+# redirectme.config (validation de config.ini), main.py et redirectme.cli (choix
+# proposés) pour éviter que la liste ne diverge de ce que ce module sait réellement écrire.
+SUPPORTED_REPORT_FORMATS = frozenset(_WRITERS)

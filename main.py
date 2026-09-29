@@ -8,7 +8,7 @@ import sys
 
 from redirectme.cli import run_interactive_menu
 from redirectme.config import load_config
-from redirectme.report import generate_report
+from redirectme.report import SUPPORTED_REPORT_FORMATS, generate_report
 from redirectme.scanner import RedirectScanner
 
 
@@ -32,7 +32,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-pages", type=int, default=None, help="Surcharge le nombre max de pages")
     parser.add_argument(
         "--output-format",
-        choices=["txt", "json", "csv", "html"],
+        choices=sorted(SUPPORTED_REPORT_FORMATS),
         default=None,
         help="Surcharge le format de rapport",
     )

@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Callable, Optional
-from urllib.parse import unquote, urljoin, urlencode, urlparse, urlsplit
+from urllib.parse import unquote, urljoin, urlencode, urlparse, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 import requests
@@ -47,6 +47,19 @@ ProgressCallback = Callable[[str, dict], None]
 def same_site(url: str, target_netloc: str) -> bool:
     """Vérifie que `url` appartient exactement au domaine ciblé (comparaison du netloc)."""
     return urlparse(url).netloc == target_netloc
+
+
+def _extract_hrefs(soup: BeautifulSoup) -> list[str]:
+    """Liens bruts (non résolus) d'une page déjà parsée."""
+    return [a["href"] for a in soup.find_all("a", href=True)]
+
+
+def _strip_fragment(url: str) -> str:
+    """Retire le fragment (#...) d'une URL : il n'est jamais envoyé au serveur, donc
+    `/page` et `/page#section` sont la même ressource et ne doivent pas compter comme
+    deux pages distinctes vis-à-vis de `max_pages`/`visited_urls`."""
+    scheme, netloc, path, query, _fragment = urlsplit(url)
+    return urlunsplit((scheme, netloc, path, query, ""))
 
 
 class RedirectScanner:
@@ -125,13 +138,20 @@ class RedirectScanner:
             return response
         return None
 
-    def get_all_links(self, url: str) -> list[str]:
-        """Récupère tous les liens (href) présents sur une page."""
+    def _fetch_and_parse(self, url: str) -> BeautifulSoup | None:
+        """Récupère une page HTML et la parse une seule fois. Partagé par l'extraction de
+        liens et le scan de formulaires pour éviter de refetcher la même page deux fois."""
         response = self.request_with_retry(url)
         if response is None or "text/html" not in response.headers.get("Content-Type", ""):
+            return None
+        return BeautifulSoup(response.text, "html.parser")
+
+    def get_all_links(self, url: str) -> list[str]:
+        """Récupère tous les liens (href) présents sur une page."""
+        soup = self._fetch_and_parse(url)
+        if soup is None:
             return []
-        soup = BeautifulSoup(response.text, "html.parser")
-        return [a["href"] for a in soup.find_all("a", href=True)]
+        return _extract_hrefs(soup)
 
     def get_js_redirects(self, url: str) -> list[str]:
         """Recherche les redirections déclenchées en JavaScript sur une page."""
@@ -206,22 +226,39 @@ class RedirectScanner:
                     "javascript", absolute_js_url, f"depuis {full_link}"
                 )
 
-    def scan_page_for_redirects(self, page_url: str) -> list[str]:
-        """Teste les liens d'une page (en parallèle) et retourne tous les liens absolus trouvés."""
-        links = [urljoin(page_url, href) for href in self.get_all_links(page_url)]
+    def scan_page_for_redirects(
+        self, page_url: str, soup: BeautifulSoup | None = None
+    ) -> list[str]:
+        """Teste les liens d'une page (en parallèle) et retourne tous les liens absolus trouvés.
+
+        Si `soup` est fourni (page déjà récupérée par l'appelant), évite une nouvelle requête.
+        """
+        if soup is None:
+            soup = self._fetch_and_parse(page_url)
+        if soup is None:
+            return []
+        # dict.fromkeys : déduplique en conservant l'ordre (plusieurs ancres/fragments
+        # vers la même URL ne doivent pas être testés plusieurs fois).
+        links = list(
+            dict.fromkeys(
+                _strip_fragment(urljoin(page_url, href)) for href in _extract_hrefs(soup)
+            )
+        )
         same_site_links = [link for link in links if same_site(link, self.target_netloc)]
         with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
             list(executor.map(self._test_link, same_site_links))
         return links
 
-    def scan_form_for_redirects(self, page_url: str) -> None:
-        """Soumet les formulaires d'une page en injectant l'URL externe dans les champs de redirection."""
+    def scan_form_for_redirects(self, page_url: str, soup: BeautifulSoup | None = None) -> None:
+        """Soumet les formulaires d'une page en injectant l'URL externe dans les champs de
+        redirection. Si `soup` est fourni (page déjà récupérée par l'appelant), évite une
+        nouvelle requête."""
         if not self._is_allowed(page_url):
             return
-        response = self.request_with_retry(page_url)
-        if response is None:
+        if soup is None:
+            soup = self._fetch_and_parse(page_url)
+        if soup is None:
             return
-        soup = BeautifulSoup(response.text, "html.parser")
 
         for form in soup.find_all("form"):
             action = form.get("action")
@@ -274,7 +311,7 @@ class RedirectScanner:
         urls_to_visit = [self.target]
 
         while urls_to_visit and len(self.visited_urls) < self.config.max_pages:
-            current_url = urls_to_visit.pop(0)
+            current_url = _strip_fragment(urls_to_visit.pop(0))
             with self.visited_lock:
                 if current_url in self.visited_urls:
                     continue
@@ -288,8 +325,11 @@ class RedirectScanner:
                 "page_scanned", {"url": current_url, "count": len(self.visited_urls)}
             )
 
-            links = self.scan_page_for_redirects(current_url)
-            self.scan_form_for_redirects(current_url)
+            # Une seule requête pour la page : le HTML est réutilisé pour l'extraction de
+            # liens et le scan de formulaires au lieu d'être récupéré deux fois.
+            page_soup = self._fetch_and_parse(current_url)
+            links = self.scan_page_for_redirects(current_url, page_soup)
+            self.scan_form_for_redirects(current_url, page_soup)
 
             for link in links:
                 if same_site(link, self.target_netloc) and link not in self.visited_urls:

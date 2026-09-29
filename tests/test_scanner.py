@@ -259,3 +259,81 @@ def test_respects_robots_txt(requests_mock, monkeypatch):
     requested_urls = {req.url for req in requests_mock.request_history}
     assert not any(url.startswith("http://example.com/private") for url in requested_urls)
     assert "http://example.com/public" in requested_urls
+
+
+def test_strip_fragment_removes_fragment_but_keeps_query():
+    from redirectme.scanner import _strip_fragment
+
+    assert _strip_fragment("http://example.com/page#section") == "http://example.com/page"
+    assert (
+        _strip_fragment("http://example.com/page?x=1#section")
+        == "http://example.com/page?x=1"
+    )
+    assert _strip_fragment("http://example.com/page") == "http://example.com/page"
+
+
+def test_crawl_deduplicates_fragment_variants_and_fetches_page_once(requests_mock):
+    # Le catch-all doit être enregistré en premier : requests_mock donne la priorité
+    # au matcher le plus récemment enregistré, donc les URL spécifiques ci-dessous
+    # (enregistrées après) doivent primer sur lui.
+    requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
+    requests_mock.get(
+        "http://example.com",
+        text='<html><body><a href="/page1#a">x</a><a href="/page1#b">y</a></body></html>',
+        headers={"Content-Type": "text/html"},
+    )
+    requests_mock.get(
+        "http://example.com/page1",
+        text="<html></html>",
+        headers={"Content-Type": "text/html"},
+    )
+
+    config = make_config(max_pages=10)
+    scanner = RedirectScanner("http://example.com", config)
+    result = scanner.crawl()
+
+    # "/page1#a" et "/page1#b" sont la même ressource : une seule page comptée en plus
+    # de la page d'accueil, pas deux.
+    assert result.pages_scanned == 2
+
+
+def test_crawl_fetches_the_current_page_only_once_for_links_and_forms(requests_mock):
+    # Avant le correctif, `scan_page_for_redirects` (extraction de liens) et
+    # `scan_form_for_redirects` récupéraient chacun la page courante séparément.
+    requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
+    requests_mock.get(
+        "http://example.com",
+        text=(
+            '<html><body><form action="/submit">'
+            '<input name="next" value="/x"></form></body></html>'
+        ),
+        headers={"Content-Type": "text/html"},
+    )
+
+    config = make_config(max_pages=1)
+    scanner = RedirectScanner("http://example.com", config)
+    scanner.crawl()
+
+    home_fetches = [
+        req for req in requests_mock.request_history if req.url.rstrip("/") == "http://example.com"
+    ]
+    assert len(home_fetches) == 1
+
+
+def test_scan_page_for_redirects_deduplicates_repeated_links(requests_mock):
+    requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
+    requests_mock.get(
+        "http://example.com",
+        text=(
+            '<html><body>'
+            '<a href="/page1">x</a><a href="/page1">y</a><a href="/page1#a">z</a>'
+            "</body></html>"
+        ),
+        headers={"Content-Type": "text/html"},
+    )
+
+    config = make_config(max_pages=1)
+    scanner = RedirectScanner("http://example.com", config)
+    links = scanner.scan_page_for_redirects("http://example.com")
+
+    assert links.count("http://example.com/page1") == 1

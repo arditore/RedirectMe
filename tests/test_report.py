@@ -4,7 +4,13 @@ from datetime import datetime
 
 import pytest
 
-from redirectme.report import ScanResult, UnsupportedFormatError, Vulnerability, generate_report
+from redirectme.report import (
+    SUPPORTED_REPORT_FORMATS,
+    ScanResult,
+    UnsupportedFormatError,
+    Vulnerability,
+    generate_report,
+)
 
 
 def make_result() -> ScanResult:
@@ -57,6 +63,10 @@ def test_generate_html_report(tmp_path):
 def test_generate_report_rejects_unsupported_format(tmp_path):
     with pytest.raises(UnsupportedFormatError):
         generate_report(make_result(), "pdf", str(tmp_path))
+
+
+def test_supported_report_formats_matches_known_formats():
+    assert SUPPORTED_REPORT_FORMATS == {"txt", "json", "csv", "html"}
 
 
 def test_html_report_escapes_xss_payload_in_url(tmp_path):
@@ -126,3 +136,27 @@ def test_html_report_escapes_xss_payload_in_target(tmp_path):
     assert xss_payload not in content
     # Assert that escaped form DOES appear in both title and summary
     assert "&lt;svg onload=alert(1)&gt;" in content
+
+
+def test_generate_csv_report_neutralizes_formula_injection(tmp_path):
+    """Une URL/détail commençant par =, +, -, @ (venant du site scanné, non fiable)
+    ne doit pas être interprété comme une formule par Excel/Sheets à l'ouverture."""
+    result = ScanResult(
+        target="https://example.com",
+        started_at=datetime(2026, 9, 18, 10, 30, 0),
+        duration_s=1.0,
+        pages_scanned=1,
+        vulnerabilities=[
+            Vulnerability(
+                type="param",
+                url="=cmd|'/c calc'!A1",
+                detail="+HYPERLINK(\"https://evil.example.com\")",
+            ),
+        ],
+    )
+    path = generate_report(result, "csv", str(tmp_path))
+    with path.open(encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+
+    assert rows[1][1] == "'=cmd|'/c calc'!A1"
+    assert rows[1][2] == "'+HYPERLINK(\"https://evil.example.com\")"
