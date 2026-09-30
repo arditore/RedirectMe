@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import random
 import sys
 import webbrowser
@@ -95,6 +96,18 @@ def _validate_profile_name(text: str) -> bool | str:
 
 
 def run_interactive_menu(config_path: str = "config.ini") -> None:
+    # The interactive menu surfaces scan activity through `on_progress` events
+    # and the Rich UI, not raw log lines — without a handler configured, an
+    # unconfigured logger's WARNING+ records (e.g. connection errors under a
+    # blocking WAF) print straight to stderr via Python's "last resort"
+    # handler, breaking the Live progress display with a wall of unstyled
+    # dumps. This is scoped to the function body (not module level) so it
+    # only takes effect when the interactive menu actually runs, not merely
+    # on import — main.py's scriptable path imports this module unconditionally
+    # and configures its own logging independently.
+    logging.getLogger("redirectme").addHandler(logging.NullHandler())
+    logging.getLogger("redirectme").propagate = False
+
     console = Console()
     config = load_config(config_path)
     last_report: Path | None = None
@@ -181,13 +194,16 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
         console=console,
     )
 
-    state = {"pages": 0, "vulns": 0}
+    state = {"pages": 0, "vulns": 0, "errors": 0}
     result: ScanResult
 
     def _status_text() -> str:
         pages_word = "page" if state["pages"] == 1 else "pages"
         vulns_word = "vulnerability" if state["vulns"] == 1 else "vulnerabilities"
-        return f"{state['pages']} {pages_word} · {state['vulns']} {vulns_word}"
+        text = f"{state['pages']} {pages_word} · {state['vulns']} {vulns_word}"
+        if state["errors"]:
+            text += f" · {state['errors']} connection error(s)"
+        return text
 
     with progress:
         task_id = progress.add_task("🐧 Starting scan...", status=_status_text())
@@ -204,6 +220,10 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
                 )
             elif event == "vulnerability_found":
                 state["vulns"] += 1
+            elif event == "request_error":
+                state["errors"] += 1
+            elif event == "scan_aborted":
+                progress.update(task_id, description="🐧 Target is blocking the scan, stopping...")
             progress.update(task_id, status=_status_text())
 
         scanner = RedirectScanner(target, scan_config, on_progress=on_progress)
@@ -212,6 +232,14 @@ def _menu_launch_scan(console: Console, config: AppConfig, config_path: str) -> 
         except KeyboardInterrupt:
             result = scanner.result()
             console.print("[yellow]Scan interrupted.[/yellow]")
+
+    if scanner.aborted_reason:
+        console.print(f"[yellow]⚠ Scan stopped early: {escape(scanner.aborted_reason)}[/yellow]")
+        console.print(
+            "[yellow]Results below are partial. Try again later, from a different "
+            "network, or with fewer threads and longer delays (Configuration menu) "
+            "if this keeps happening.[/yellow]"
+        )
 
     _print_summary(console, result)
     report_path = generate_report(result, scan_config.report_format, scan_config.report_output_dir)

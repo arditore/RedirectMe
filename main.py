@@ -43,7 +43,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def run_cli(args: argparse.Namespace) -> int:
     logging.basicConfig(
-        level=logging.INFO if args.verbose else logging.WARNING, format="%(message)s"
+        level=logging.DEBUG if args.verbose else logging.WARNING, format="%(message)s"
     )
 
     if not (args.target.startswith("http://") or args.target.startswith("https://")):
@@ -92,6 +92,11 @@ def run_cli(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 3
+
+    if scanner.aborted_reason:
+        print(f"Warning: {scanner.aborted_reason}", file=sys.stderr)
+        print("Results above are partial — the scan did not run to completion.", file=sys.stderr)
+        return 4
 
     if result.vulnerabilities:
         print("🐧 Noot noot! The penguin found something.")

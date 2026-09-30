@@ -240,6 +240,13 @@ Reports are written to `reports/` (configurable).
    detected in JS code and in form fields.
 5. **Report**: results are exported in the chosen format.
 
+If a target starts resetting/refusing connections outright (a WAF, anti-bot
+protection, or rate-limiting reacting to the scan), RedirectMe stops on its
+own after 15 requests in a row fail at the connection level, instead of
+grinding on for hours with no signal — the interactive menu shows why in the
+status line, and the scriptable CLI exits with a dedicated code (`4`) and a
+warning that the results are partial.
+
 ---
 
 ## Contributing

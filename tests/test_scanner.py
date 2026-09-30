@@ -485,3 +485,61 @@ def test_tier2_skips_guessed_params_on_ordinary_non_entry_point_links(requests_m
     result = scanner.crawl()
 
     assert len(result.vulnerabilities) == 0
+
+
+def test_circuit_breaker_stops_after_consecutive_connection_failures(requests_mock):
+    import requests
+
+    from redirectme.scanner import MAX_CONSECUTIVE_FAILURES
+
+    # A target actively resetting every connection (WAF/anti-bot/rate
+    # limiting) must not be hammered for as long as max_pages allows —
+    # crawl() should recognize it's blocked and stop.
+    requests_mock.get(ANY_URL, exc=requests.exceptions.ConnectionError("connection reset"))
+
+    events: list[str] = []
+    config = make_config(max_pages=1000)
+    scanner = RedirectScanner(
+        "http://example.com", config, on_progress=lambda event, data: events.append(event)
+    )
+    result = scanner.crawl()
+
+    assert scanner.aborted_reason is not None
+    assert "blocking or rate-limiting" in scanner.aborted_reason
+    assert events.count("scan_aborted") == 1
+    error_count = events.count("request_error")
+    # Stops at the threshold, not somewhere well beyond it (fast bail-out once
+    # tripped) or before it (real transient failures shouldn't trip it early).
+    assert error_count == MAX_CONSECUTIVE_FAILURES
+
+
+def test_circuit_breaker_resets_after_a_successful_request(requests_mock):
+    import requests
+
+    from redirectme.scanner import MAX_CONSECUTIVE_FAILURES
+
+    # Register a bounded number of failures, well under the threshold, then a
+    # normal successful page — the counter must reset on success so isolated
+    # flaky requests don't eventually trip the breaker by accumulating across
+    # an otherwise-healthy scan.
+    responses = [
+        {"exc": requests.exceptions.ConnectionError("reset")}
+        for _ in range(MAX_CONSECUTIVE_FAILURES - 1)
+    ]
+    responses.append(
+        {"status_code": 200, "text": "<html></html>", "headers": {"Content-Type": "text/html"}}
+    )
+    requests_mock.get(ANY_URL, status_code=200, headers={"Content-Type": "text/html"})
+    requests_mock.get("http://example.com/flaky", responses)
+
+    config = make_config(max_pages=1)
+    scanner = RedirectScanner("http://example.com", config)
+    for _ in range(MAX_CONSECUTIVE_FAILURES - 1):
+        assert scanner.request_with_retry("http://example.com/flaky", retries=1) is None
+    assert scanner._consecutive_failures == MAX_CONSECUTIVE_FAILURES - 1
+    assert not scanner._aborted.is_set()
+
+    response = scanner.request_with_retry("http://example.com/flaky", retries=1)
+    assert response is not None
+    assert scanner._consecutive_failures == 0
+    assert not scanner._aborted.is_set()

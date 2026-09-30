@@ -21,6 +21,12 @@ from redirectme.report import ScanResult, Vulnerability
 
 DEFAULT_MAX_RETRIES = 5
 
+# If this many requests in a row fail at the connection level (reset, refused,
+# timeout...), the target is almost certainly actively blocking the scan
+# (WAF/anti-bot/rate-limiting) rather than just having a few flaky requests.
+# Grinding on regardless wastes hours and produces no signal either way.
+MAX_CONSECUTIVE_FAILURES = 15
+
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -112,6 +118,10 @@ class RedirectScanner:
         self.session = requests.Session()
         self._start_time: datetime | None = None
         self._start_perf: float | None = None
+        self._consecutive_failures = 0
+        self._failure_lock = threading.Lock()
+        self._aborted = threading.Event()
+        self.aborted_reason: str | None = None
         self._robot_parser: RobotFileParser | None = None
         if self.config.respect_robots:
             self._robot_parser = self._load_robots_txt()
@@ -145,6 +155,8 @@ class RedirectScanner:
         retries = DEFAULT_MAX_RETRIES if retries is None else retries
         backoff_factor = 2
         for attempt in range(retries):
+            if self._aborted.is_set():
+                return None
             time.sleep(random.uniform(self.config.min_delay, self.config.max_delay))
             try:
                 response = self.session.request(
@@ -157,9 +169,12 @@ class RedirectScanner:
                     allow_redirects=False,
                 )
             except requests.exceptions.RequestException as exc:
-                logger.error("Request error on %s: %s", url, exc)
+                logger.debug("Request error on %s: %s", url, exc)
+                self.on_progress("request_error", {"url": url, "error": str(exc)})
+                self._record_failure()
                 return None
 
+            self._consecutive_failures = 0
             if response.status_code == 429:
                 retry_after = response.headers.get("Retry-After")
                 wait_time = int(retry_after) if retry_after else backoff_factor * (2**attempt)
@@ -170,6 +185,22 @@ class RedirectScanner:
                 continue
             return response
         return None
+
+    def _record_failure(self) -> None:
+        """Tracks connection-level failures (reset, refused, timeout...) across
+        threads; past `MAX_CONSECUTIVE_FAILURES` in a row, the target is almost
+        certainly actively blocking the scan, so it's stopped rather than
+        grinding on for hours with no signal either way."""
+        with self._failure_lock:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES and not self._aborted.is_set():
+                self.aborted_reason = (
+                    f"{self._consecutive_failures} requests in a row failed at the "
+                    "connection level — the target is likely blocking or "
+                    "rate-limiting this scan."
+                )
+                self._aborted.set()
+                self.on_progress("scan_aborted", {"reason": self.aborted_reason})
 
     def _fetch_and_parse(self, url: str) -> BeautifulSoup | None:
         """Fetches an HTML page and parses it only once. Shared by link extraction
@@ -251,6 +282,8 @@ class RedirectScanner:
         for value in build_payloads(
             param, self.target_netloc, self.config.external_url, self.config.use_bypass_payloads
         ):
+            if self._aborted.is_set():
+                return
             test_url = _build_test_url(full_link, param, value)
             self.on_progress("link_tested", {"url": test_url})
             if self.is_open_redirect(test_url):
@@ -259,7 +292,7 @@ class RedirectScanner:
     def _test_link_params(self, full_link: str) -> None:
         """Tests `full_link`'s redirect parameters, in two tiers, without touching
         its JavaScript (see `_test_link`, which adds that on top)."""
-        if not self._is_allowed(full_link):
+        if not self._is_allowed(full_link) or self._aborted.is_set():
             return
 
         # Tier 1 (always, cheap): the link's own existing query parameters —
@@ -279,10 +312,12 @@ class RedirectScanner:
                     self._test_param(full_link, param)
 
     def _test_link(self, full_link: str) -> None:
-        if not self._is_allowed(full_link):
+        if not self._is_allowed(full_link) or self._aborted.is_set():
             return
         self._test_link_params(full_link)
 
+        if self._aborted.is_set():
+            return
         for js_url in self.get_js_redirects(full_link):
             absolute_js_url = urljoin(full_link, js_url)
             if same_site(absolute_js_url, self.target_netloc) and self.is_open_redirect(
@@ -319,7 +354,7 @@ class RedirectScanner:
         """Submits a page's forms, injecting the external URL into redirect fields.
         If `soup` is provided (page already fetched by the caller), avoids a new
         request."""
-        if not self._is_allowed(page_url):
+        if not self._is_allowed(page_url) or self._aborted.is_set():
             return
         if soup is None:
             soup = self._fetch_and_parse(page_url)
@@ -376,7 +411,11 @@ class RedirectScanner:
         self._start_perf = time.perf_counter()
         urls_to_visit = [self.target]
 
-        while urls_to_visit and len(self.visited_urls) < self.config.max_pages:
+        while (
+            urls_to_visit
+            and len(self.visited_urls) < self.config.max_pages
+            and not self._aborted.is_set()
+        ):
             current_url = _strip_fragment(urls_to_visit.pop(0))
             with self.visited_lock:
                 if current_url in self.visited_urls:
